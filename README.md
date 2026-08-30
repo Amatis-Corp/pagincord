@@ -1,10 +1,19 @@
+<div align="center">
+
 # Pagincord
 
-[![npm version](https://img.shields.io/npm/v/pagincord.svg)](https://www.npmjs.com/package/pagincord)
-[![npm downloads](https://img.shields.io/npm/dm/pagincord.svg)](https://www.npmjs.com/package/pagincord)
-[![license](https://img.shields.io/npm/l/pagincord.svg)](https://github.com/yourusername/pagincord/blob/main/LICENSE)
+**A modern, lightweight pagination library for Discord.js v14+**
 
-A modern, lightweight, and production-ready pagination library for Discord.js v14+ with full TypeScript support.
+[![npm version](https://img.shields.io/npm/v/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/pagincord)
+[![npm downloads](https://img.shields.io/npm/dm/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/pagincord)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
+
+[Features](#features) • [Installation](#installation) • [Quick Start](#quick-start) • [Usage Examples](#usage-examples) • [API Reference](#api-reference)
+
+</div>
+
+---
 
 ## Features
 
@@ -16,6 +25,8 @@ A modern, lightweight, and production-ready pagination library for Discord.js v1
 💾 **Memory Safe** - Proper collector cleanup to prevent memory leaks  
 📦 **Zero Dependencies** - Only requires discord.js as a peer dependency  
 🎯 **TypeScript First** - Full type definitions included
+
+---
 
 ## Installation
 
@@ -30,6 +41,8 @@ yarn add pagincord discord.js
 ```bash
 pnpm add pagincord discord.js
 ```
+
+---
 
 ## Quick Start
 
@@ -377,6 +390,16 @@ import {
 
 MIT
 
+---
+
+<div align="center">
+
+**Made with ❤️ for the Discord.js community**
+
+[Report Bug](https://github.com/yourusername/pagincord/issues) • [Request Feature](https://github.com/yourusername/pagincord/issues) • [NPM Package](https://www.npmjs.com/package/pagincord)
+
+</div>
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -384,6 +407,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Support
 
 If you encounter any issues or have questions, please open an issue on GitHub.
-#   p a g i n c o r d  
- #   p a g i n c o r d  
+#   p a g i n c o r d 
+ 
+ #   p a g i n c o r d 
+ 
  
