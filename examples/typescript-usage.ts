@@ -1,20 +1,18 @@
 /**
- * TypeScript usage — type-safe Pagincord
+ * TypeScript usage — @amatiscorp/pagincord
  */
 
-import {
-  Client,
-  GatewayIntentBits,
-  EmbedBuilder,
-  ChatInputCommandInteraction,
-} from 'discord.js';
+import { Client, GatewayIntentBits, ChatInputCommandInteraction } from 'discord.js';
 import {
   Paginator,
   paginate,
   createPages,
+  configure,
   type PaginationOptions,
   type EmbedData,
-} from 'pagincord';
+} from '@amatiscorp/pagincord';
+
+configure({ locale: 'en', timeout: 90_000 });
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -31,65 +29,43 @@ client.on('interactionCreate', async (interaction) => {
     await sendHelp(interaction);
   }
 
-  if (interaction.commandName === 'leaderboard') {
-    await sendLeaderboard(interaction);
+  if (interaction.commandName === 'ayuda') {
+    await sendAyuda(interaction);
   }
 });
 
 async function sendHelp(interaction: ChatInputCommandInteraction) {
   const pages: EmbedData[] = [
-    {
-      title: 'Help — 1',
-      description: 'Welcome to the help menu.',
-      color: 0x5865f2,
-      fields: [
-        { name: 'Command', value: '`/help`', inline: true },
-        { name: 'Description', value: 'Shows this menu', inline: true },
-      ],
-    },
-    {
-      title: 'Help — 2',
-      description: 'Available commands',
-      color: 0x57f287,
-      fields: [
-        { name: '`/ping`', value: 'Check bot latency' },
-        { name: '`/info`', value: 'Get bot information' },
-      ],
-    },
+    { title: 'Help — 1', description: 'Welcome.', color: 0x5865f2 },
+    { title: 'Help — 2', description: 'Commands.', color: 0x57f287 },
   ];
 
   const options: PaginationOptions = {
     embeds: pages,
     authorId: interaction.user.id,
+    locale: 'en',
+    showButtonLabels: true,
     useSelectMenu: true,
     jumpModal: true,
-    timeout: 120_000,
-    autoFooter: { format: 'Page {page} of {total}', append: false },
   };
 
-  const paginator = new Paginator(options);
-  await paginator.start(interaction);
+  await new Paginator(options).start(interaction);
 }
 
-async function sendLeaderboard(interaction: ChatInputCommandInteraction) {
-  const users = [
-    { name: 'User1', score: 1000 },
-    { name: 'User2', score: 950 },
-    { name: 'User3', score: 900 },
-    { name: 'User4', score: 850 },
-  ];
-
+async function sendAyuda(interaction: ChatInputCommandInteraction) {
   const pages = createPages({
-    items: users,
+    items: ['`/ping` — latencia', '`/info` — información', '`/stats` — estadísticas'],
     itemsPerPage: 2,
-    mapItem: (user, index) => `**${index + 1}.** ${user.name} — ${user.score} points`,
-    embed: { title: '🏆 Leaderboard', color: 0xffd700 },
+    embed: { title: 'Comandos', color: 0x57f287 },
+    locale: 'es',
   });
 
   await paginate(interaction, {
     embeds: pages,
     authorId: interaction.user.id,
-    timeout: 180_000,
+    locale: 'es',
+    showButtonLabels: true,
+    preset: 'compact',
   });
 }
 

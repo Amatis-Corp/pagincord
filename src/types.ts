@@ -1,13 +1,17 @@
 import type {
+  ActionRowBuilder,
+  ButtonInteraction,
+  ButtonStyle,
+  CommandInteraction,
   EmbedBuilder,
   Message,
-  CommandInteraction,
-  ButtonInteraction,
-  StringSelectMenuInteraction,
+  MessageActionRowComponentBuilder,
   MessageComponentInteraction,
-  ButtonStyle,
+  MessageMentionOptions,
+  StringSelectMenuInteraction,
   User,
 } from 'discord.js';
+import type { LocaleButtonLabels, LocaleCode, LocaleStrings } from './locales';
 
 /**
  * Plain object used to build an embed without creating an EmbedBuilder yourself.
@@ -15,7 +19,7 @@ import type {
 export interface EmbedData {
   title?: string;
   description?: string;
-  color?: number;
+  color?: number | string;
   fields?: Array<{ name: string; value: string; inline?: boolean }>;
   footer?: { text: string; iconURL?: string };
   thumbnail?: string;
@@ -29,18 +33,22 @@ export type EmbedResolvable = EmbedBuilder | EmbedData;
 
 export type ButtonEmojiResolvable = string | { id?: string; name?: string; animated?: boolean };
 
+export type ButtonKey = 'first' | 'previous' | 'pageIndicator' | 'next' | 'last' | 'stop';
+
+/**
+ * - `full` — first, previous, stop, next, last
+ * - `compact` — previous, page indicator, next, stop
+ * - `minimal` — previous, next
+ * - `select` — stop button + select menu
+ */
+export type PaginationPreset = 'full' | 'compact' | 'minimal' | 'select';
+
 export interface PaginationButtons {
-  /** Jump to the first page. @default true */
   first?: boolean;
-  /** Go to the previous page. @default true */
   previous?: boolean;
-  /** Go to the next page. @default true */
   next?: boolean;
-  /** Jump to the last page. @default true */
   last?: boolean;
-  /** Stop pagination. @default true */
   stop?: boolean;
-  /** Disabled (or clickable) button showing `1 / 5`. @default false */
   pageIndicator?: boolean;
 }
 
@@ -66,22 +74,21 @@ export interface PaginationButtonStyles {
   next?: ButtonStyle;
   last?: ButtonStyle;
   stop?: ButtonStyle;
+  pageIndicator?: ButtonStyle;
 }
 
 export interface AutoFooterOptions {
-  /** Template. Tokens: `{page}` `{total}`. @default "Page {page} of {total}" */
+  /** Template. Tokens: `{page}` `{total}`. Uses the active locale when omitted. */
   format?: string;
   /** Keep the existing footer and append the page text. @default false */
   append?: boolean;
 }
 
 export interface JumpModalOptions {
-  /** Modal title (max 45 characters). */
   title?: string;
-  /** Input label (max 45 characters). */
   label?: string;
-  /** Input placeholder. */
   placeholder?: string;
+  invalid?: string;
 }
 
 export type EndReason = 'timeout' | 'stop' | 'manual' | 'idle' | 'messageDelete';
@@ -99,179 +106,120 @@ export interface PageContext {
 
 export type PaginationFilter = (interaction: PaginationInteraction) => boolean;
 
+export type ExtraRows =
+  | ActionRowBuilder<MessageActionRowComponentBuilder>[]
+  | ((
+      ctx: PageContext
+    ) => ActionRowBuilder<MessageActionRowComponentBuilder>[]);
+
+export interface SelectOptionInfo {
+  label: string;
+  description?: string;
+  emoji?: ButtonEmojiResolvable;
+}
+
+export type PaginationTexts = Partial<Omit<LocaleStrings, 'buttons'>> & {
+  buttons?: Partial<LocaleButtonLabels>;
+};
+
 /**
  * Configuration options for {@link Paginator}.
+ * Instance options override {@link configure} defaults.
  */
 export interface PaginationOptions {
-  /**
-   * Pages to display. You can mix EmbedBuilder instances and plain objects.
-   */
   embeds: EmbedResolvable[];
 
-  /**
-   * User ID allowed to control pagination.
-   * Other users receive an ephemeral error message.
-   */
+  /** UI language for built-in texts. `'en'` or `'es'`, or a code registered with `defineLocale`. */
+  locale?: LocaleCode;
+
+  /** Override individual strings for this paginator only. */
+  texts?: PaginationTexts;
+
+  /** Visual preset. Overridden by explicit `buttons` / `useSelectMenu`. */
+  preset?: PaginationPreset;
+
   authorId?: string;
-
-  /**
-   * Extra user IDs allowed to control pagination (merged with `authorId`).
-   */
   allowedUsers?: string[];
-
-  /**
-   * Custom allow/deny logic. Return `false` to reject the interaction.
-   */
   filter?: PaginationFilter;
 
-  /**
-   * Include a select menu to jump to a page.
-   * Automatically windows options when there are more than 25 pages.
-   * @default false
-   */
   useSelectMenu?: boolean;
-
-  /**
-   * Select menu placeholder. Can be a string or a function of (page, total).
-   */
   selectPlaceholder?: string | ((page: number, total: number) => string);
+  /** Custom select-option label / description / emoji per page. */
+  selectOption?: (embed: EmbedBuilder, index: number, ctx: PageContext) => SelectOptionInfo | string;
 
   /**
-   * Idle timeout in milliseconds. `0` disables the timeout.
+   * Idle timeout in milliseconds. `0` disables idle expiry.
    * @default 60000
    */
   timeout?: number;
 
-  /**
-   * Custom button emojis.
-   */
+  /** Absolute collector lifetime in milliseconds, independent of idle clicks. */
+  maxDuration?: number;
+
   buttonEmojis?: PaginationButtonEmojis;
-
-  /**
-   * Optional text labels next to (or instead of) emojis.
-   */
   buttonLabels?: PaginationButtonLabels;
-
-  /**
-   * Custom discord.js button styles.
-   */
   buttonStyles?: PaginationButtonStyles;
-
-  /**
-   * Which buttons to render.
-   */
   buttons?: PaginationButtons;
+  /** Render order. Unknown keys are ignored. */
+  buttonOrder?: ButtonKey[];
 
-  /**
-   * Clicking the page-indicator button opens a modal to type a page number.
-   */
+  /** Put locale (or custom) labels on navigation buttons. @default false */
+  showButtonLabels?: boolean;
+  /** Do not set emojis (requires labels). @default false */
+  hideEmojis?: boolean;
+
   jumpModal?: boolean | JumpModalOptions;
-
-  /**
-   * Delete the message when pagination ends via the stop button.
-   * Prefer {@link PaginationOptions.endBehavior} for new code.
-   * @default false
-   */
   deleteOnStop?: boolean;
-
-  /**
-   * What to do when pagination ends.
-   * @default "disable" (or "delete" if `deleteOnStop` is true)
-   */
   endBehavior?: EndBehavior;
-
-  /**
-   * Starting page index (0-based).
-   * @default 0
-   */
   startPage?: number;
-
-  /**
-   * Wrap around from last → first and first → last.
-   * @default false
-   */
   loop?: boolean;
-
-  /**
-   * Send the pagination message as ephemeral (interactions only).
-   * @default false
-   */
   ephemeral?: boolean;
-
-  /**
-   * Message content shown above the embed.
-   */
   content?: string | ((ctx: PageContext) => string);
-
-  /**
-   * Automatically set (or append) a footer with the current page.
-   * @default false
-   */
   autoFooter?: boolean | AutoFooterOptions;
-
-  /**
-   * Message sent when a user is not allowed to control the paginator.
-   */
   unauthorizedMessage?: string | ((user: User) => string);
-
-  /**
-   * Hide every button when there is only one page.
-   * @default false
-   */
   hideButtonsIfSinglePage?: boolean;
-
-  /**
-   * How to send the message when `start()` receives an interaction.
-   * By default: `editReply` if already replied/deferred, otherwise `reply`.
-   */
   replyAs?: ReplyAs;
 
-  /**
-   * Called after the page changes.
-   */
+  /** Template for the `1 / 5` button. Tokens: `{page}` `{total}`. */
+  indicatorFormat?: string;
+
+  /** Prefix for component custom IDs. @default "pgc" */
+  customIdPrefix?: string;
+
+  /** Extra action rows (max 5 rows total including buttons + select). */
+  extraRows?: ExtraRows;
+
+  allowedMentions?: MessageMentionOptions;
+
   onPageChange?: (
     ctx: PageContext & { embed: EmbedBuilder; interaction?: PaginationInteraction }
   ) => void | Promise<void>;
-
-  /**
-   * Called when pagination ends.
-   */
   onEnd?: (reason: EndReason) => void | Promise<void>;
-
-  /**
-   * Called for every authorized component interaction.
-   */
   onCollect?: (interaction: PaginationInteraction) => void | Promise<void>;
+  onStart?: (message: Message) => void | Promise<void>;
+  onUnauthorized?: (interaction: PaginationInteraction) => void | Promise<void>;
 }
 
-/**
- * Snapshot of a running paginator.
- */
 export interface PaginationState {
   currentPage: number;
   totalPages: number;
   authorId?: string;
   ended: boolean;
   loop: boolean;
+  locale: string;
+  active: boolean;
 }
 
-/**
- * A Discord message or any interaction that can reply.
- */
 export type PaginationTarget = Message | CommandInteraction | MessageComponentInteraction;
 
-/**
- * Component interactions handled by the paginator.
- */
 export type PaginationInteraction = ButtonInteraction | StringSelectMenuInteraction;
 
-/**
- * Events emitted by {@link Paginator}.
- */
 export interface PaginatorEvents {
   pageChange: [ctx: PageContext & { embed: EmbedBuilder; interaction?: PaginationInteraction }];
   end: [reason: EndReason];
   collect: [interaction: PaginationInteraction];
   unauthorized: [interaction: PaginationInteraction];
+  start: [message: Message];
   error: [error: unknown];
 }
+

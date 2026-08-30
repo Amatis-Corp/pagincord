@@ -2,51 +2,66 @@
 
 # Pagincord
 
-**Smart embed pagination for Discord.js v14+**
+**Smart, fully configurable embed pagination for Discord.js v14+**
 
-Buttons · Select menus · Jump-to-page modal · Events · List helpers · TypeScript
+by [Amatis Corp](https://github.com/amatiscorp)
 
-[![npm version](https://img.shields.io/npm/v/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/pagincord)
-[![npm downloads](https://img.shields.io/npm/dm/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/pagincord)
+Buttons · Select menus · Jump modal · English / Español · Presets · Events · TypeScript
+
+[![npm version](https://img.shields.io/npm/v/@amatiscorp/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/@amatiscorp/pagincord)
+[![npm downloads](https://img.shields.io/npm/dm/@amatiscorp/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/@amatiscorp/pagincord)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
 
-[Installation](#installation) · [Quick start](#quick-start) · [Examples](#examples) · [API](#api-reference) · [Español](#español)
+[Install](#installation) · [Quick start](#quick-start) · [Locales](#languages-en--es) · [Configure](#global-defaults) · [API](#api-reference) · [Español](#español)
 
 </div>
 
 ---
 
-Pagincord turns an array of embeds into an interactive Discord message: first / previous / next / last / stop, an optional select menu, an optional “jump to page” modal, idle timeout, and user locks. It works with slash commands, component interactions, and regular messages.
+Pagincord turns an array of embeds into an interactive Discord message. You control the language, buttons, labels, timeout, who can click, and what happens when it ends.
 
-**Requires:** Node.js 16.11+ and `discord.js` v14+.
+Works with slash commands, buttons, select menus, and regular messages.
+
+**Requires:** Node.js `>=16.11` and `discord.js` `^14`.
+
+**Package:** [`@amatiscorp/pagincord`](https://www.npmjs.com/package/@amatiscorp/pagincord)  
+**Repo:** [github.com/amatiscorp/pagincord](https://github.com/amatiscorp/pagincord)
 
 ---
 
 ## Installation
 
 ```bash
-npm install pagincord discord.js
+npm install @amatiscorp/pagincord discord.js
 ```
 
 ```bash
-yarn add pagincord discord.js
+yarn add @amatiscorp/pagincord discord.js
 ```
 
 ```bash
-pnpm add pagincord discord.js
+pnpm add @amatiscorp/pagincord discord.js
 ```
 
-`discord.js` is a peer dependency. You must install it in your bot.
+`discord.js` is a peer dependency. Install it in your bot as well.
+
+```javascript
+const { Paginator, paginate, configure } = require('@amatiscorp/pagincord');
+```
+
+```typescript
+import { Paginator, paginate, configure } from '@amatiscorp/pagincord';
+```
 
 ---
 
 ## Quick start
 
-### Slash command (JavaScript)
+### Slash command
 
 ```javascript
-const { Paginator } = require('pagincord');
+const { Paginator } = require('@amatiscorp/pagincord');
 const { EmbedBuilder } = require('discord.js');
 
 client.on('interactionCreate', async (interaction) => {
@@ -60,140 +75,197 @@ client.on('interactionCreate', async (interaction) => {
       new EmbedBuilder().setTitle('Page 3').setDescription('Support').setColor(0xfee75c),
     ],
     authorId: interaction.user.id,
-    timeout: 60_000,
+    locale: 'en',
   });
 
   await paginator.start(interaction);
 });
 ```
 
-### One-liner with `paginate()`
+### One-liner
 
 ```javascript
-const { paginate } = require('pagincord');
+const { paginate } = require('@amatiscorp/pagincord');
 
 await paginate(interaction, {
   embeds: pages,
   authorId: interaction.user.id,
+  locale: 'en',
 });
 ```
 
-### TypeScript
-
-```typescript
-import { Paginator, paginate, createPages, type EmbedData } from 'pagincord';
-import { EmbedBuilder, ChatInputCommandInteraction } from 'discord.js';
-
-async function help(interaction: ChatInputCommandInteraction) {
-  const pages: EmbedData[] = [
-    { title: 'Welcome', description: 'Page one', color: 0x5865f2 },
-    { title: 'Commands', description: 'Page two', color: 0x57f287 },
-  ];
-
-  await paginate(interaction, {
-    embeds: pages,
-    authorId: interaction.user.id,
-    useSelectMenu: true,
-  });
-}
-```
-
-### Prefix / message command
+### Prefix command
 
 ```javascript
+const { Paginator } = require('@amatiscorp/pagincord');
+
 client.on('messageCreate', async (message) => {
   if (message.content !== '!pages') return;
 
-  const { Paginator } = require('pagincord');
-  const { EmbedBuilder } = require('discord.js');
-
-  const paginator = new Paginator({
+  await new Paginator({
     embeds: [
-      new EmbedBuilder().setTitle('Page 1').setColor(0x00ff00),
-      new EmbedBuilder().setTitle('Page 2').setColor(0x0000ff),
+      { title: 'Page 1', description: 'Hello', color: 0x00ff00 },
+      { title: 'Page 2', description: 'World', color: 0x0000ff },
     ],
     authorId: message.author.id,
-  });
-
-  await paginator.start(message);
+  }).start(message);
 });
 ```
+
+---
+
+## Languages (EN / ES)
+
+Every built-in string (unauthorized reply, footer, select placeholder, jump modal, empty list, button labels) ships in **English** and **Spanish**.
+
+```javascript
+// English (default)
+await paginate(interaction, { embeds, locale: 'en' });
+
+// Español — modal, errores, footer y select en español
+await paginate(interaction, {
+  embeds,
+  locale: 'es',
+  showButtonLabels: true, // First → Inicio, Back → Atrás, …
+});
+```
+
+Set it once for the whole bot:
+
+```javascript
+const { configure } = require('@amatiscorp/pagincord');
+
+configure({
+  locale: 'es',
+  showButtonLabels: true,
+  timeout: 120_000,
+});
+```
+
+Override a single string:
+
+```javascript
+await paginate(interaction, {
+  embeds,
+  locale: 'es',
+  texts: {
+    unauthorized: 'Solo el autor del comando puede usar estos botones.',
+  },
+});
+```
+
+Add another language:
+
+```javascript
+const { defineLocale } = require('@amatiscorp/pagincord');
+
+defineLocale('fr', {
+  unauthorized: "Vous ne pouvez pas contrôler cette pagination.",
+  pageLabel: 'Page {page} sur {total}',
+  selectPlaceholder: 'Page {page} sur {total}',
+  selectEnded: 'Pagination terminée',
+  selectOption: '{page}. {title}',
+  fallbackTitle: 'Page {page}',
+  jumpModalTitle: 'Aller à la page',
+  jumpModalLabel: 'Numéro de page (1-{total})',
+  jumpModalPlaceholder: 'Actuellement {page} sur {total}',
+  jumpModalInvalid: 'Entrez un nombre entre 1 et {total}.',
+  emptyList: 'Aucun élément à afficher.',
+  indicator: '{page} / {total}',
+  buttons: {
+    first: 'Début',
+    previous: 'Retour',
+    next: 'Suivant',
+    last: 'Fin',
+    stop: 'Fermer',
+  },
+});
+```
+
+Tokens you can use in templates: `{page}` `{total}` `{title}`.
+
+---
+
+## Global defaults
+
+```javascript
+const { configure, setLocale, Paginator } = require('@amatiscorp/pagincord');
+
+configure({
+  locale: 'en',
+  timeout: 90_000,
+  loop: false,
+  useSelectMenu: false,
+  endBehavior: 'disable',
+  autoFooter: false,
+  showButtonLabels: false,
+  hideEmojis: false,
+  preset: 'full',
+  ephemeral: false,
+});
+
+// aliases
+setLocale('es');
+Paginator.configure({ locale: 'en' });
+```
+
+Instance options always win over `configure()`.
+
+---
+
+## Presets
+
+| Preset | Buttons | Select menu |
+|--------|---------|-------------|
+| `full` (default) | First · Previous · Stop · Next · Last | no |
+| `compact` | Previous · `1 / 5` · Next · Stop | no |
+| `minimal` | Previous · Next | no |
+| `select` | Stop only | yes |
+
+```javascript
+await paginate(interaction, {
+  embeds,
+  authorId: interaction.user.id,
+  preset: 'compact',
+  jumpModal: true,
+});
+```
+
+You can still override `buttons`, `buttonOrder`, and `useSelectMenu` after picking a preset.
 
 ---
 
 ## Features
 
-- **EmbedBuilder or plain objects** — mix both in the same array
+- **EmbedBuilder or plain objects** — mix both; hex colors like `'#5865F2'` are allowed
+- **EN / ES locales** plus `defineLocale()` for any other language
+- **Global `configure()`** so you do not repeat the same options
+- **Presets** — `full`, `compact`, `minimal`, `select`
 - **User lock** — `authorId`, `allowedUsers`, or a custom `filter`
-- **Smart buttons** — First / Previous / Next / Last auto-disable at the edges
-- **Page indicator** — `1 / 5` button; optionally opens a jump-to-page modal
-- **Select menu** — jump to a page by title (handles more than 25 pages)
-- **Loop** — wrap from last page back to the first
-- **Idle timeout** — resets on every click; `timeout: 0` means never expire
-- **End behavior** — disable buttons, remove them, or delete the message
-- **Events** — `pageChange`, `end`, `collect`, `unauthorized`, `error`
-- **Helpers** — `chunk()`, `createPages()`, `paginate()`
+- **Smart buttons** — auto-disable at the edges; custom order, labels, styles, emojis
+- **Jump-to-page modal** — click `1 / 5` and type a number
+- **Select menu** — works with more than 25 pages (sliding window)
+- **Helpers** — `createPages`, `createTextPages`, `createFieldPages`, `chunk`, `splitText`
+- **Events** — `start`, `pageChange`, `collect`, `unauthorized`, `end`, `error`
+- **Loop**, ephemeral replies, auto footer, extra action rows
 - **Unique custom IDs** — several paginators can live in the same channel
-- **Zero runtime dependencies** — only `discord.js` as a peer dependency
+- **Zero runtime dependencies**
 
 ---
 
 ## Examples
 
-### 1. Plain objects (no EmbedBuilder)
+### 1. Paginate a list (`createPages`)
 
 ```javascript
-const { Paginator } = require('pagincord');
-
-const paginator = new Paginator({
-  embeds: [
-    {
-      title: 'Welcome',
-      description: 'Thanks for joining.',
-      color: 0x00ff00,
-      thumbnail: 'https://example.com/logo.png',
-      fields: [
-        { name: 'Members', value: '1,204', inline: true },
-        { name: 'Online', value: '86', inline: true },
-      ],
-      footer: { text: 'Server info' },
-      timestamp: true,
-    },
-    {
-      title: 'Rules',
-      description: 'Be respectful. No spam.',
-      color: 0xff0000,
-      author: { name: 'Moderation team' },
-    },
-  ],
-  authorId: interaction.user.id,
-});
-
-await paginator.start(interaction);
-```
-
-### 2. Paginate any list with `createPages()`
-
-This is the usual pattern for leaderboards, queues, shop items, search results, etc.
-
-```javascript
-const { paginate, createPages } = require('pagincord');
-
-const users = [
-  { name: 'Alex', score: 1200 },
-  { name: 'Sam', score: 980 },
-  { name: 'Riley', score: 875 },
-  // ...
-];
+const { paginate, createPages } = require('@amatiscorp/pagincord');
 
 const pages = createPages({
   items: users,
   itemsPerPage: 5,
   mapItem: (user, i) => `**${i + 1}.** ${user.name} — **${user.score}** pts`,
-  embed: {
-    title: '🏆 Leaderboard',
-    color: 0xffd700,
-  },
+  embed: { title: '🏆 Leaderboard', color: 0xffd700 },
+  locale: 'en',
 });
 
 await paginate(interaction, {
@@ -203,10 +275,10 @@ await paginate(interaction, {
 });
 ```
 
-`mapPage` gives you the whole slice if you need a custom layout:
+Custom page body:
 
 ```javascript
-const pages = createPages({
+createPages({
   items: products,
   itemsPerPage: 3,
   mapPage: (items) => items.map((p) => `**${p.name}**\n${p.price} coins`).join('\n\n'),
@@ -214,276 +286,294 @@ const pages = createPages({
 });
 ```
 
-### 3. Select menu + jump-to-page modal
+### 2. Long text (`createTextPages` / `splitText`)
 
 ```javascript
-const paginator = new Paginator({
-  embeds: myEmbeds,
+const { createTextPages, splitText } = require('@amatiscorp/pagincord');
+
+const pages = createTextPages(rulesMarkdown, {
+  title: (page, total) => `Rules (${page}/${total})`,
+  color: 0xe74c3c,
+  maxLength: 3500,
+  locale: 'en',
+});
+```
+
+`splitText(text, 4096)` only splits a string. Discord embed descriptions max out at 4096 characters.
+
+### 3. Embed fields (`createFieldPages`)
+
+```javascript
+const { createFieldPages, paginate } = require('@amatiscorp/pagincord');
+
+const pages = createFieldPages(
+  [
+    { name: 'Sword', value: '120 coins', inline: true },
+    { name: 'Shield', value: '90 coins', inline: true },
+    { name: 'Potion', value: '25 coins', inline: true },
+  ],
+  { fieldsPerPage: 6, embed: { title: 'Shop', color: 0x3498db } }
+);
+
+await paginate(interaction, { embeds: pages, authorId: interaction.user.id });
+```
+
+### 4. Labels, order, and emojis
+
+```javascript
+await paginate(interaction, {
+  embeds,
+  locale: 'en',
+  showButtonLabels: true,
+  hideEmojis: false,
+  buttonOrder: ['previous', 'pageIndicator', 'next', 'stop'],
+  buttons: { first: false, last: false, pageIndicator: true, stop: true },
+  buttonLabels: { stop: 'Dismiss' },
+  buttonEmojis: { previous: '⬅️', next: '➡️', stop: '❌' },
+  jumpModal: true,
+});
+```
+
+### 5. Who can click
+
+```javascript
+// anyone
+await paginate(interaction, { embeds });
+
+// author + extra users
+await paginate(interaction, {
+  embeds,
   authorId: interaction.user.id,
-  useSelectMenu: true,
-  jumpModal: true, // page-indicator button opens a modal
-  timeout: 120_000,
+  allowedUsers: ['123456789012345678'],
 });
 
-await paginator.start(interaction);
-```
-
-Custom modal copy:
-
-```javascript
-jumpModal: {
-  title: 'Jump to page',
-  label: 'Page number',
-  placeholder: 'e.g. 4',
-}
-```
-
-### 4. Loop, labels, and which buttons to show
-
-```javascript
-const paginator = new Paginator({
-  embeds: myEmbeds,
-  authorId: interaction.user.id,
-  loop: true,
-  buttons: {
-    first: false,
-    last: false,
-    previous: true,
-    next: true,
-    stop: true,
-    pageIndicator: true,
-  },
-  buttonLabels: {
-    previous: 'Back',
-    next: 'Next',
-    stop: 'Close',
-  },
-  buttonEmojis: {
-    previous: '⬅️',
-    next: '➡️',
-    stop: '❌',
-  },
-});
-```
-
-### 5. Public pagination (anyone can click)
-
-Omit `authorId`. Use `allowedUsers` if several people should share control.
-
-```javascript
-const paginator = new Paginator({
-  embeds: myEmbeds,
-  allowedUsers: [interaction.user.id, '123456789012345678'],
-  timeout: 5 * 60_000,
-  unauthorizedMessage: 'Only the command author and the co-host can change pages.',
-});
-```
-
-Custom filter (for example: members with a role):
-
-```javascript
-const paginator = new Paginator({
-  embeds: myEmbeds,
+// role filter
+await paginate(interaction, {
+  embeds,
   filter: (i) => i.member?.roles.cache.has(modRoleId),
   unauthorizedMessage: (user) => `${user}, this menu is for moderators.`,
 });
 ```
 
-### 6. Auto footer, content, and ephemeral reply
+### 6. Footer, content, ephemeral, end behavior
 
 ```javascript
-const paginator = new Paginator({
-  embeds: myEmbeds,
+await paginate(interaction, {
+  embeds,
   authorId: interaction.user.id,
+  locale: 'en',
   ephemeral: true,
   autoFooter: { format: 'Page {page} / {total}', append: true },
   content: ({ page, total }) => `Viewing **${page + 1}** of **${total}**`,
-  endBehavior: 'clear', // remove buttons when it expires
+  endBehavior: 'clear', // 'disable' | 'delete' | 'clear'
+  timeout: 120_000,     // idle; 0 = never
+  maxDuration: 600_000, // hard cap, even if people keep clicking
 });
 ```
 
-`page` in callbacks is **0-based**. Display it as `page + 1`.
+`page` in callbacks is **0-based**. Show it as `page + 1`.
 
-### 7. Events
+### 7. Events and live updates
 
 ```javascript
 const paginator = new Paginator({
-  embeds: myEmbeds,
+  embeds,
   authorId: interaction.user.id,
-  onPageChange: async ({ page, total }) => {
-    console.log(`Now on page ${page + 1}/${total}`);
-  },
-  onEnd: (reason) => {
-    console.log('Ended because:', reason); // timeout | stop | manual | idle | messageDelete
-  },
+  onStart: (message) => console.log('sent', message.id),
+  onPageChange: ({ page, total }) => console.log(`${page + 1}/${total}`),
+  onEnd: (reason) => console.log(reason),
 });
 
-paginator.on('collect', (i) => {
-  console.log(`${i.user.tag} clicked ${i.customId}`);
-});
-
-paginator.on('unauthorized', (i) => {
-  console.log(`${i.user.tag} was blocked`);
-});
+paginator.on('collect', (i) => console.log(i.user.tag));
+paginator.on('unauthorized', (i) => console.log('blocked', i.user.id));
+paginator.on('error', (err) => console.error(err));
 
 await paginator.start(interaction);
-```
-
-### 8. Programmatic control
-
-```javascript
-const paginator = new Paginator({ embeds: myEmbeds, authorId: interaction.user.id });
-await paginator.start(interaction);
-
-console.log(paginator.getCurrentPage(), paginator.getTotalPages(), paginator.isActive());
 
 await paginator.goToPage(2);
 await paginator.next();
 await paginator.previous();
-
-await paginator.addEmbeds([{ title: 'Extra page', description: 'Appended later' }]);
-await paginator.setEmbeds(newPages);
-
-setTimeout(() => paginator.stop(), 30_000);
+await paginator.first();
+await paginator.last();
+await paginator.addEmbeds([{ title: 'Extra', description: 'Appended' }]);
+await paginator.insertEmbeds(0, [{ title: 'Intro', description: 'New first page' }]);
+await paginator.removePage(3);
+paginator.setAllowedUsers([interaction.user.id]);
+paginator.setLocale('es');
+await paginator.refresh();
+await paginator.stop();
 ```
 
-### 9. `chunk()` for raw arrays
+### 8. Custom select options + extra rows
 
 ```javascript
-const { chunk } = require('pagincord');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-const groups = chunk(allItems, 10);
-const embeds = groups.map((group, i) => ({
-  title: `Results ${i + 1}`,
-  description: group.join('\n'),
-}));
+await paginate(interaction, {
+  embeds,
+  useSelectMenu: true,
+  selectOption: (embed, index) => ({
+    label: `Go to ${embed.data.title}`,
+    description: `Page ${index + 1}`,
+    emoji: '📄',
+  }),
+  extraRows: ({ page }) => [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`claim-${page}`)
+        .setLabel('Claim this page')
+        .setStyle(ButtonStyle.Success)
+    ),
+  ],
+});
 ```
 
-### 10. Reply mode on interactions
+Discord allows **5 rows** total. Pagincord fills buttons + select first, then appends `extraRows`.
 
-By default Pagincord uses `editReply` if the interaction is already deferred/replied, otherwise `reply`.
+### 9. Reply mode
 
 ```javascript
 await interaction.deferReply();
 await paginate(interaction, { embeds }); // editReply
 
-// Replace the message that contained the button:
 await paginate(buttonInteraction, { embeds, replyAs: 'update' });
-
-// Always send a new follow-up:
 await paginate(interaction, { embeds, replyAs: 'followUp' });
 ```
 
-### 11. Deferred slash command
+### 10. Deferred command with slow I/O
 
 ```javascript
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand() || interaction.commandName !== 'queue') return;
+await interaction.deferReply();
+const tracks = await fetchQueue();
 
-  await interaction.deferReply();
-  const tracks = await fetchQueue(); // slow I/O
-
-  const pages = createPages({
-    items: tracks,
-    itemsPerPage: 8,
-    mapItem: (t, i) => `\`${i + 1}.\` ${t.title} — ${t.duration}`,
-    embed: { title: 'Music queue', color: 0x1db954 },
-  });
-
-  await paginate(interaction, { embeds: pages, authorId: interaction.user.id });
+const pages = createPages({
+  items: tracks,
+  itemsPerPage: 8,
+  mapItem: (t, i) => `\`${i + 1}.\` ${t.title} — ${t.duration}`,
+  embed: { title: 'Music queue', color: 0x1db954 },
 });
+
+await paginate(interaction, { embeds: pages, authorId: interaction.user.id, locale: 'en' });
 ```
 
 ---
 
 ## API reference
 
+### `configure(defaults)` / `setLocale(code)`
+
+| Key | Type | Default |
+|-----|------|---------|
+| `locale` | `'en' \| 'es' \| string` | `'en'` |
+| `timeout` | `number` | `60000` |
+| `loop` | `boolean` | `false` |
+| `useSelectMenu` | `boolean` | `false` |
+| `endBehavior` | `'disable' \| 'delete' \| 'clear'` | `'disable'` |
+| `autoFooter` | `boolean` | `false` |
+| `showButtonLabels` | `boolean` | `false` |
+| `hideEmojis` | `boolean` | `false` |
+| `preset` | `'full' \| 'compact' \| 'minimal' \| 'select'` | — |
+| `ephemeral` | `boolean` | `false` |
+| `buttons` / `buttonEmojis` | objects | built-in |
+
+`getConfig()`, `resetConfig()`, `getLocale()` read the current defaults.
+
 ### `new Paginator(options)`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `embeds` | `(EmbedBuilder \| EmbedData)[]` | **required** | Pages to display |
+| `embeds` | `(EmbedBuilder \| EmbedData)[]` | **required** | Pages |
+| `locale` | `'en' \| 'es' \| string` | config | UI language |
+| `texts` | `object` | — | Per-instance string overrides |
+| `preset` | `'full' \| 'compact' \| 'minimal' \| 'select'` | `full` | Button layout shortcut |
 | `authorId` | `string` | — | Only this user can click |
-| `allowedUsers` | `string[]` | `[]` | Extra user IDs (merged with `authorId`) |
-| `filter` | `(interaction) => boolean` | — | Return `false` to reject a click |
-| `useSelectMenu` | `boolean` | `false` | Dropdown to jump to a page |
-| `selectPlaceholder` | `string \| (page, total) => string` | `"Page X of Y"` | Select menu placeholder |
-| `timeout` | `number` | `60000` | Idle timeout in ms. `0` = never |
+| `allowedUsers` | `string[]` | `[]` | Extra allowed IDs |
+| `filter` | `(i) => boolean` | — | Return `false` to reject |
+| `useSelectMenu` | `boolean` | `false` | Page dropdown |
+| `selectPlaceholder` | `string \| fn` | locale | Select placeholder |
+| `selectOption` | `(embed, index, ctx) => …` | locale | Custom option label / emoji |
+| `timeout` | `number` | `60000` | Idle ms (`0` = never) |
+| `maxDuration` | `number` | — | Absolute collector lifetime |
 | `buttonEmojis` | `object` | `⏮️ ◀️ ▶️ ⏭️ 🗑️` | Custom emojis |
-| `buttonLabels` | `object` | — | Optional text on buttons |
-| `buttonStyles` | `object` | Primary / Danger | discord.js `ButtonStyle` |
-| `buttons` | `object` | all nav + stop | Toggle `first`, `previous`, `next`, `last`, `stop`, `pageIndicator` |
-| `jumpModal` | `boolean \| object` | `false` | Click the page indicator to type a page number |
-| `deleteOnStop` | `boolean` | `false` | Alias for `endBehavior: 'delete'` |
-| `endBehavior` | `'disable' \| 'delete' \| 'clear'` | `'disable'` | What happens when pagination ends |
-| `startPage` | `number` | `0` | Initial page (0-based) |
-| `loop` | `boolean` | `false` | Wrap around at the edges |
-| `ephemeral` | `boolean` | `false` | Ephemeral reply (interactions only) |
-| `content` | `string \| (ctx) => string` | — | Message text above the embed |
-| `autoFooter` | `boolean \| { format, append }` | `false` | Write `Page X of Y` on the footer |
-| `unauthorizedMessage` | `string \| (user) => string` | English default | Ephemeral reject message |
-| `hideButtonsIfSinglePage` | `boolean` | `false` | Hide controls when there is one page |
-| `replyAs` | `'reply' \| 'editReply' \| 'followUp' \| 'update'` | auto | How to send on an interaction |
-| `onPageChange` | `(ctx) => void` | — | After the page changes |
-| `onEnd` | `(reason) => void` | — | When pagination ends |
-| `onCollect` | `(interaction) => void` | — | After an authorized click |
+| `buttonLabels` | `object` | — | Custom labels |
+| `buttonStyles` | `object` | Primary / Danger | discord.js styles |
+| `buttons` | `object` | all nav + stop | Toggle each button |
+| `buttonOrder` | `ButtonKey[]` | default order | Render order |
+| `showButtonLabels` | `boolean` | `false` | Use locale labels |
+| `hideEmojis` | `boolean` | `false` | Labels only |
+| `jumpModal` | `boolean \| object` | `false` | Type a page number |
+| `deleteOnStop` | `boolean` | `false` | Alias of `endBehavior: 'delete'` |
+| `endBehavior` | `'disable' \| 'delete' \| 'clear'` | `'disable'` | After stop / timeout |
+| `startPage` | `number` | `0` | 0-based |
+| `loop` | `boolean` | `false` | Wrap around |
+| `ephemeral` | `boolean` | `false` | Interaction-only |
+| `content` | `string \| fn` | — | Text above the embed |
+| `autoFooter` | `boolean \| { format, append }` | `false` | Page footer |
+| `unauthorizedMessage` | `string \| fn` | locale | Reject message |
+| `hideButtonsIfSinglePage` | `boolean` | `false` | Hide controls if 1 page |
+| `replyAs` | `'reply' \| 'editReply' \| 'followUp' \| 'update'` | auto | How to send |
+| `indicatorFormat` | `string` | locale | `1 / 5` button text |
+| `customIdPrefix` | `string` | `'pgc'` | Component ID prefix |
+| `extraRows` | `rows \| (ctx) => rows` | — | Extra action rows |
+| `allowedMentions` | `object` | — | Passed to Discord |
+| `onPageChange` / `onEnd` / `onCollect` / `onStart` / `onUnauthorized` | fn | — | Callbacks |
 
-`jumpModal` object: `{ title?, label?, placeholder? }`.
-
-`autoFooter` object: `{ format?: 'Page {page} of {total}', append?: boolean }`.
+`jumpModal`: `{ title?, label?, placeholder?, invalid? }`.
 
 ### Methods
 
 ```ts
-await paginator.start(target)      // Message | CommandInteraction | MessageComponentInteraction
+await paginator.start(target)
 await paginator.stop()
 await paginator.goToPage(index)    // 0-based
 await paginator.next()
 await paginator.previous()
+await paginator.first()
+await paginator.last()
 await paginator.setEmbeds(embeds)
 await paginator.addEmbeds(embeds)
+await paginator.insertEmbeds(index, embeds)
+await paginator.removePage(index)
+await paginator.refresh()
 
-paginator.getTotalPages()          // number
-paginator.getCurrentPage()         // number (0-based)
-paginator.getMessage()             // Message | undefined
-paginator.isActive()               // boolean
-paginator.getState()               // { currentPage, totalPages, authorId, ended, loop }
+paginator.setAllowedUsers(ids)
+paginator.setLocale('es')
+paginator.getLocale()
+paginator.getEmbeds()
+paginator.getTotalPages()
+paginator.getCurrentPage()         // 0-based
+paginator.getMessage()
+paginator.isActive()
+paginator.getState()               // includes locale + active
 ```
 
-### `paginate(target, options)`
+### Helpers
 
-Same as `new Paginator(options)` + `start(target)`. Returns the `Paginator` instance.
-
-### `createPages(options)`
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `items` | `T[]` | **required** | Data to split |
-| `itemsPerPage` | `number` | `10` | Items on each embed |
-| `mapItem` | `(item, index, ctx) => string` | `String(item)` | One line per item |
-| `mapPage` | `(items, ctx) => string` | — | Custom page body (wins over `mapItem`) |
-| `separator` | `string` | `"\n"` | Joiner for `mapItem` |
-| `embed` | `EmbedData \| (ctx) => EmbedData` | `{}` | Base embed. Description is kept; the list is appended |
-| `emptyText` | `string` | `"No items to display."` | Used when `items` is empty |
-| `pageFooter` | `boolean` | `true` | Adds `Page X of Y` to the footer |
-
-`ctx.page` is **0-based**. `ctx.total` is the number of pages. `ctx.startIndex` is the global index of the first item on that page.
-
-### `chunk(array, size)`
-
-Returns `T[][]`. Throws if `size` is not a positive number.
+| Function | Purpose |
+|----------|---------|
+| `paginate(target, options)` | `new Paginator` + `start` |
+| `createPages({ items, … })` | Split a list into embeds |
+| `createTextPages(text, opts)` | Split a long string into embeds |
+| `createFieldPages(fields, opts)` | Split embed fields (max 25 / page) |
+| `chunk(array, size)` | Raw `T[][]` |
+| `splitText(text, maxLength)` | Split a string on paragraphs / spaces |
+| `toEmbedBuilders(embeds)` | Normalize mixed pages to `EmbedBuilder[]` |
+| `interpolate(template, vars)` | Replace `{page}` `{total}` `{title}` |
+| `defineLocale(code, strings)` | Register a language |
+| `locales.en` / `locales.es` | Built-in dictionaries |
 
 ### Events
 
 ```ts
+paginator.on('start', (message) => {});
 paginator.on('pageChange', ({ page, total, embed, interaction }) => {});
-paginator.on('end', (reason) => {});
+paginator.on('end', (reason) => {});          // timeout | stop | manual | idle | messageDelete
 paginator.on('collect', (interaction) => {});
 paginator.on('unauthorized', (interaction) => {});
 paginator.on('error', (error) => {});
 ```
 
-If you listen to `error`, failed Discord API calls (deleted message, etc.) are forwarded there instead of being swallowed.
+Listen to `error` if you want failed Discord API calls (deleted message, etc.) instead of silent ignore.
 
 ### `EmbedData`
 
@@ -491,7 +581,7 @@ If you listen to `error`, failed Discord API calls (deleted message, etc.) are f
 interface EmbedData {
   title?: string;
   description?: string;
-  color?: number;
+  color?: number | string; // 0x5865f2 or '#5865F2'
   fields?: Array<{ name: string; value: string; inline?: boolean }>;
   footer?: { text: string; iconURL?: string };
   thumbnail?: string;
@@ -506,54 +596,92 @@ interface EmbedData {
 
 ## Button layout
 
-Default row:
+Default (`full`):
 
-`⏮️ First` · `◀️ Previous` · `🗑️ Stop` · `▶️ Next` · `⏭️ Last`
+`⏮️` First · `◀️` Previous · `🗑️` Stop · `▶️` Next · `⏭️` Last
 
 - First / Previous disable on page 1 (unless `loop`)
 - Next / Last disable on the last page (unless `loop`)
-- All navigation disables when there is only one page
-- Enable `pageIndicator` (or `jumpModal`) to insert a `1 / 5` button
-- Discord allows 5 buttons per row; extra buttons wrap to a second row
-- Custom IDs are unique per instance (`pgc:<id>:next`), so two paginators never clash
+- Enable `pageIndicator` or `jumpModal` to insert `1 / 5`
+- Discord allows 5 buttons per row; extras wrap
+- Custom IDs look like `pgc:<id>:next` so two paginators never clash
 
 ---
 
 ## Notes
 
-- **Idle timeout** uses the collector `idle` option: the timer resets on every authorized click.
-- **Select menus** are limited to 25 options by Discord. Pagincord shows a sliding window around the current page when you have more than 25 pages.
-- **`start()` once** — create a new `Paginator` for each command invocation. Calling `start()` twice on the same instance throws.
-- **Ephemeral** only applies to interaction replies, not to `message.channel.send`.
-- Clone safety: incoming `EmbedBuilder`s are copied, so Pagincord does not mutate your originals.
+- Idle `timeout` resets on every authorized click. `maxDuration` is a hard stop.
+- Select menus are limited to 25 options. Pagincord windows around the current page.
+- Call `start()` **once** per instance. Create a new `Paginator` for each command.
+- `ephemeral` only applies to interactions, not `message.channel.send`.
+- Incoming `EmbedBuilder`s are cloned. Pagincord does not mutate yours.
 
 ---
 
 ## License
 
-MIT
+MIT © [Amatis Corp](https://github.com/amatiscorp)
 
 ---
 ---
 
 # Español
 
-Pagincord convierte un array de embeds en un mensaje interactivo de Discord: botones de navegación, menú de selección, modal para saltar de página, timeout por inactividad y bloqueo por usuario. Funciona con slash commands, interacciones de componentes y mensajes normales.
+Pagincord convierte un array de embeds en un mensaje interactivo. El paquete en npm es **`@amatiscorp/pagincord`**.
 
 **Requiere:** Node.js 16.11+ y `discord.js` v14+.
 
 ## Instalación
 
 ```bash
-npm install pagincord discord.js
+npm install @amatiscorp/pagincord discord.js
 ```
 
-`discord.js` es una peer dependency: instálalo también en tu bot.
+```javascript
+const { Paginator, paginate, configure } = require('@amatiscorp/pagincord');
+```
+
+## Idioma del bot
+
+Todos los textos internos vienen en **inglés** y **español**: error de permisos, footer, placeholder del select, modal “ir a página”, lista vacía y etiquetas de botones.
+
+```javascript
+// Una vez al arrancar el bot
+configure({
+  locale: 'es',
+  showButtonLabels: true, // Inicio, Atrás, Siguiente, Final, Cerrar
+  timeout: 120_000,
+});
+
+// O solo en un comando
+await paginate(interaction, {
+  embeds: paginas,
+  authorId: interaction.user.id,
+  locale: 'es',
+  showButtonLabels: true,
+  jumpModal: true,
+});
+```
+
+Textos en inglés por defecto (`locale: 'en'`).
+
+Sobrescribe una frase:
+
+```javascript
+await paginate(interaction, {
+  embeds: paginas,
+  locale: 'es',
+  texts: {
+    unauthorized: 'Solo el autor del comando puede usar estos botones.',
+    jumpModalTitle: 'Saltar a página',
+  },
+});
+```
 
 ## Inicio rápido
 
 ```javascript
-const { Paginator } = require('pagincord');
+const { Paginator } = require('@amatiscorp/pagincord');
 const { EmbedBuilder } = require('discord.js');
 
 client.on('interactionCreate', async (interaction) => {
@@ -567,7 +695,8 @@ client.on('interactionCreate', async (interaction) => {
       new EmbedBuilder().setTitle('Página 3').setDescription('Soporte').setColor(0xfee75c),
     ],
     authorId: interaction.user.id,
-    timeout: 60_000,
+    locale: 'es',
+    showButtonLabels: true,
   });
 
   await paginator.start(interaction);
@@ -577,117 +706,143 @@ client.on('interactionCreate', async (interaction) => {
 Atajo:
 
 ```javascript
-const { paginate } = require('pagincord');
+const { paginate } = require('@amatiscorp/pagincord');
 
 await paginate(interaction, {
   embeds: paginas,
   authorId: interaction.user.id,
+  locale: 'es',
 });
 ```
 
-## Paginar una lista (ranking, tienda, cola…)
+## Paginar una lista
 
 ```javascript
-const { paginate, createPages } = require('pagincord');
+const { paginate, createPages } = require('@amatiscorp/pagincord');
 
 const paginas = createPages({
   items: usuarios,
   itemsPerPage: 5,
   mapItem: (user, i) => `**${i + 1}.** ${user.name} — **${user.score}** pts`,
   embed: { title: '🏆 Ranking', color: 0xffd700 },
+  locale: 'es', // footer "Página X de Y"
 });
 
 await paginate(interaction, {
   embeds: paginas,
   authorId: interaction.user.id,
+  locale: 'es',
   useSelectMenu: true,
 });
 ```
 
-## Opciones más usadas
+Texto largo (reglas, changelog):
+
+```javascript
+const { createTextPages } = require('@amatiscorp/pagincord');
+
+const paginas = createTextPages(reglamento, {
+  title: (page, total) => `Reglas (${page}/${total})`,
+  color: 0xe74c3c,
+  locale: 'es',
+});
+```
+
+Campos de embed:
+
+```javascript
+const { createFieldPages } = require('@amatiscorp/pagincord');
+
+const paginas = createFieldPages(campos, {
+  fieldsPerPage: 6,
+  embed: { title: 'Tienda' },
+  locale: 'es',
+});
+```
+
+## Presets
+
+```javascript
+await paginate(interaction, {
+  embeds: paginas,
+  locale: 'es',
+  preset: 'compact', // Atrás · 1/5 · Siguiente · Cerrar
+  jumpModal: true,   // pulsar 1/5 abre el modal
+});
+```
+
+- `full` — todos los botones
+- `compact` — atrás / indicador / siguiente / cerrar
+- `minimal` — solo atrás y siguiente
+- `select` — menú desplegable + cerrar
+
+## Opciones frecuentes
 
 ```javascript
 const paginator = new Paginator({
   embeds: misEmbeds,
-  authorId: interaction.user.id,   // solo este usuario puede pulsar
-  allowedUsers: ['id1', 'id2'],    // más usuarios permitidos
-  useSelectMenu: true,             // desplegable para saltar de página
-  jumpModal: {                     // el indicador 1/5 abre un modal
-    title: 'Ir a página',
-    label: 'Número de página',
-    placeholder: 'Ejemplo: 4',
-  },
-  timeout: 120_000,                // 2 minutos de inactividad (0 = nunca)
-  loop: true,                      // de la última vuelve a la primera
-  ephemeral: true,                 // solo lo ve quien ejecutó el comando
-  autoFooter: true,                // footer "Page X of Y"
-  endBehavior: 'disable',          // 'disable' | 'delete' | 'clear'
-  unauthorizedMessage: 'No puedes controlar esta paginación.',
-  buttonLabels: {
-    previous: 'Atrás',
-    next: 'Siguiente',
-    stop: 'Cerrar',
-  },
+  locale: 'es',
+  showButtonLabels: true,
+  authorId: interaction.user.id,
+  allowedUsers: ['id1', 'id2'],
+  useSelectMenu: true,
+  jumpModal: true,
+  timeout: 120_000,          // inactividad (0 = nunca)
+  maxDuration: 10 * 60_000,  // tope absoluto
+  loop: true,
+  ephemeral: true,
+  autoFooter: true,          // "Página X de Y"
+  endBehavior: 'disable',    // 'disable' | 'delete' | 'clear'
+  preset: 'compact',
+  buttonOrder: ['previous', 'pageIndicator', 'next', 'stop'],
 });
 
 await paginator.start(interaction);
 ```
 
-## Eventos y control manual
+## Eventos y control
 
 ```javascript
 paginator.on('pageChange', ({ page, total }) => {
-  console.log(`Ahora en la página ${page + 1}/${total}`);
+  console.log(`Página ${page + 1}/${total}`);
 });
 
 paginator.on('end', (reason) => {
-  console.log('Terminó:', reason); // timeout | stop | manual | idle | messageDelete
+  console.log('Terminó:', reason);
 });
 
-await paginator.goToPage(2); // índice desde 0
+await paginator.goToPage(2);
 await paginator.next();
+await paginator.first();
+await paginator.addEmbeds([{ title: 'Extra', description: 'Añadida después' }]);
+paginator.setLocale('en');
 await paginator.stop();
 ```
 
-## Comando con defer (consultas lentas)
-
-```javascript
-await interaction.deferReply();
-const tracks = await obtenerCola();
-
-const paginas = createPages({
-  items: tracks,
-  itemsPerPage: 8,
-  mapItem: (t, i) => `\`${i + 1}.\` ${t.title}`,
-  embed: { title: 'Cola de música', color: 0x1db954 },
-});
-
-await paginate(interaction, { embeds: paginas, authorId: interaction.user.id });
-```
+`page` es **desde 0**. Para mostrarlo usa `page + 1`.
 
 ## Métodos
 
-| Método | Descripción |
-|--------|-------------|
-| `start(target)` | Envía la paginación (mensaje o interacción) |
+| Método | Qué hace |
+|--------|----------|
+| `start(target)` | Envía la paginación |
 | `stop()` | Termina y aplica `endBehavior` |
-| `goToPage(n)` | Salta a la página `n` (desde 0) |
+| `goToPage(n)` / `first()` / `last()` | Salta de página (desde 0) |
 | `next()` / `previous()` | Avanza o retrocede |
-| `setEmbeds()` / `addEmbeds()` | Reemplaza o añade páginas |
-| `getCurrentPage()` / `getTotalPages()` | Estado actual |
-| `isActive()` | `true` mientras el collector vive |
-| `getMessage()` | El `Message` de Discord |
+| `setEmbeds` / `addEmbeds` / `insertEmbeds` / `removePage` | Cambia páginas en caliente |
+| `refresh()` | Vuelve a pintar el mensaje |
+| `setAllowedUsers(ids)` | Cambia quién puede pulsar |
+| `setLocale('es')` | Cambia el idioma sobre la marcha |
+| `getState()` | `{ currentPage, totalPages, locale, active, … }` |
 
-`page` en callbacks es **desde 0**. Para mostrarlo al usuario usa `page + 1`.
+## Notas
 
-## Notas rápidas
-
-- El timeout es de **inactividad**: se reinicia con cada clic válido.
-- El select menu de Discord admite 25 opciones. Si hay más páginas, Pagincord muestra una ventana alrededor de la página actual.
-- Llama a `start()` **una sola vez** por instancia. Crea un `Paginator` nuevo en cada comando.
-- `ephemeral` solo aplica a interacciones, no a mensajes de texto.
-- Varios paginadores pueden existir a la vez: cada uno usa custom IDs únicos.
+- El timeout es de **inactividad** y se reinicia con cada clic válido.
+- El select de Discord admite 25 opciones; si hay más páginas se muestra una ventana.
+- Un `Paginator` = un `start()`. Crea uno nuevo en cada comando.
+- `ephemeral` solo vale en interacciones, no en mensajes de texto.
+- Publicación npm: **`@amatiscorp/pagincord`** (acceso público, organización Amatis Corp).
 
 ## Licencia
 
-MIT
+MIT © Amatis Corp

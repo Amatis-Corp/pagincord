@@ -1,9 +1,24 @@
 /**
- * Advanced usage — jump modal, events, loop, dynamic pages
+ * Advanced usage — locales, presets, helpers, events
  */
 
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-const { Paginator, paginate, createPages, chunk } = require('pagincord');
+const {
+  Paginator,
+  paginate,
+  createPages,
+  createTextPages,
+  createFieldPages,
+  splitText,
+  configure,
+} = require('@amatiscorp/pagincord');
+
+configure({
+  locale: 'es',
+  showButtonLabels: true,
+  timeout: 120_000,
+  autoFooter: true,
+});
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -12,87 +27,65 @@ const client = new Client({
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === 'generate') {
-    const count = interaction.options.getInteger('pages') || 8;
-
-    const embeds = Array.from({ length: count }, (_, i) => ({
-      title: `Generated page ${i + 1}`,
-      description: `This is page ${i + 1} of ${count}`,
-      color: Math.floor(Math.random() * 0xffffff),
-    }));
+  if (interaction.commandName === 'rules') {
+    const pages = createTextPages(longRulesText, {
+      title: (page, total) => `Server rules (${page}/${total})`,
+      color: 0xe74c3c,
+      locale: 'en',
+    });
 
     await paginate(interaction, {
-      embeds,
+      embeds: pages,
       authorId: interaction.user.id,
-      useSelectMenu: true,
+      locale: 'en',
+      preset: 'compact',
       jumpModal: true,
-      loop: true,
-      timeout: 300_000,
-      autoFooter: true,
     });
   }
 
-  if (interaction.commandName === 'database') {
-    const rows = Array.from({ length: 50 }, (_, i) => ({
-      id: i + 1,
-      name: `Item ${i + 1}`,
-      value: Math.floor(Math.random() * 1000),
-    }));
+  if (interaction.commandName === 'shop') {
+    const fields = [
+      { name: 'Sword', value: '120 coins', inline: true },
+      { name: 'Shield', value: '90 coins', inline: true },
+      { name: 'Potion', value: '25 coins', inline: true },
+      { name: 'Bow', value: '150 coins', inline: true },
+    ];
 
-    const pages = createPages({
-      items: rows,
-      itemsPerPage: 5,
-      mapItem: (item) => `**#${item.id}** ${item.name} — ${item.value}`,
-      embed: { title: '📊 Database results', color: 0x3498db },
-    });
-
-    const paginator = new Paginator({
-      embeds: pages,
+    await paginate(interaction, {
+      embeds: createFieldPages(fields, {
+        fieldsPerPage: 2,
+        embed: { title: 'Shop', color: 0x3498db },
+        locale: 'en',
+      }),
       authorId: interaction.user.id,
-      useSelectMenu: true,
-      jumpModal: {
-        title: 'Jump to page',
-        label: 'Page number',
-      },
-      timeout: 600_000,
-      endBehavior: 'clear',
-      onPageChange: ({ page, total }) => {
-        console.log(`Page ${page + 1}/${total}`);
-      },
-      onEnd: (reason) => {
-        console.log('Pagination ended:', reason);
-      },
+      preset: 'select',
     });
-
-    paginator.on('unauthorized', (i) => {
-      console.log(`${i.user.tag} tried to control this paginator`);
-    });
-
-    await paginator.start(interaction);
   }
 
   if (interaction.commandName === 'manual') {
     const paginator = new Paginator({
-      embeds: chunk(['Red', 'Green', 'Blue'], 1).map(([name], i) =>
-        new EmbedBuilder().setTitle(`Page ${i + 1}`).setDescription(name)
-      ),
+      embeds: [
+        new EmbedBuilder().setTitle('Red').setColor(0xff0000),
+        new EmbedBuilder().setTitle('Green').setColor(0x00ff00),
+      ],
       authorId: interaction.user.id,
-      buttons: { first: false, last: false, pageIndicator: true, stop: true },
-      buttonLabels: { previous: 'Back', next: 'Next', stop: 'Close' },
+      locale: 'es',
+      texts: { unauthorized: 'Solo el autor del comando puede usar esto.' },
+      onEnd: (reason) => console.log('Ended:', reason),
     });
 
     await paginator.start(interaction);
-
-    setTimeout(() => {
-      paginator.addEmbeds([{ title: 'Bonus page', description: 'Added later' }]);
-    }, 10_000);
-
-    setTimeout(() => paginator.stop(), 30_000);
+    paginator.on('pageChange', ({ page, total }) => {
+      console.log(`${page + 1}/${total}`);
+    });
   }
 });
 
-client.once('ready', () => {
-  console.log('Bot is ready!');
-});
+client.once('ready', () => console.log('Ready'));
+
+const longRulesText = splitText(
+  'Be respectful.\n\nNo spam.\n\nFollow Discord TOS.',
+  4000
+).join('\n\n');
 
 // client.login('YOUR_BOT_TOKEN');

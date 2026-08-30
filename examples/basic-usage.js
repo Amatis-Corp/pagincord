@@ -1,9 +1,11 @@
 /**
- * Basic usage — slash commands with Pagincord
+ * Basic usage — @amatiscorp/pagincord
  */
 
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-const { Paginator, paginate, createPages } = require('pagincord');
+const { Paginator, paginate, createPages, configure } = require('@amatiscorp/pagincord');
+
+configure({ locale: 'en', timeout: 60_000 });
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -19,37 +21,38 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.commandName === 'pages') {
     const paginator = new Paginator({
       embeds: [
-        new EmbedBuilder()
-          .setTitle('Page 1: Welcome')
-          .setDescription('Use the buttons below to navigate.')
-          .setColor(0x00ff00),
-        new EmbedBuilder()
-          .setTitle('Page 2: Features')
-          .setDescription('Select menus, jump modal, events, and list helpers.')
-          .setColor(0x0000ff),
-        new EmbedBuilder()
-          .setTitle('Page 3: Done')
-          .setDescription('That is all for this example.')
-          .setColor(0xff0000),
+        new EmbedBuilder().setTitle('Page 1').setDescription('Welcome').setColor(0x00ff00),
+        new EmbedBuilder().setTitle('Page 2').setDescription('Features').setColor(0x0000ff),
+        new EmbedBuilder().setTitle('Page 3').setDescription('Done').setColor(0xff0000),
       ],
       authorId: interaction.user.id,
-      timeout: 60_000,
+      locale: 'en',
     });
 
     await paginator.start(interaction);
   }
 
-  if (interaction.commandName === 'leaderboard') {
-    const users = [
-      { name: 'Alex', score: 1200 },
-      { name: 'Sam', score: 980 },
-      { name: 'Riley', score: 875 },
-      { name: 'Jordan', score: 640 },
-      { name: 'Casey', score: 410 },
-    ];
+  if (interaction.commandName === 'paginas') {
+    await paginate(interaction, {
+      embeds: [
+        { title: 'Página 1', description: 'Bienvenido', color: 0x5865f2 },
+        { title: 'Página 2', description: 'Comandos', color: 0x57f287 },
+      ],
+      authorId: interaction.user.id,
+      locale: 'es',
+      showButtonLabels: true,
+      preset: 'compact',
+      jumpModal: true,
+    });
+  }
 
+  if (interaction.commandName === 'leaderboard') {
     const pages = createPages({
-      items: users,
+      items: [
+        { name: 'Alex', score: 1200 },
+        { name: 'Sam', score: 980 },
+        { name: 'Riley', score: 875 },
+      ],
       itemsPerPage: 2,
       mapItem: (user, i) => `**${i + 1}.** ${user.name} — **${user.score}** pts`,
       embed: { title: '🏆 Leaderboard', color: 0xffd700 },
@@ -59,16 +62,6 @@ client.on('interactionCreate', async (interaction) => {
       embeds: pages,
       authorId: interaction.user.id,
       useSelectMenu: true,
-    });
-  }
-
-  if (interaction.commandName === 'pages-public') {
-    await paginate(interaction, {
-      embeds: [
-        new EmbedBuilder().setTitle('Public page 1').setColor(0xffd700),
-        new EmbedBuilder().setTitle('Public page 2').setColor(0xff69b4),
-      ],
-      timeout: 120_000,
     });
   }
 });

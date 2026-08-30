@@ -1,7 +1,7 @@
 {
-  "name": "pagincord",
-  "version": "1.1.0",
-  "description": "Smart embed pagination for Discord.js v14+. Buttons, select menus, jump-to-page modal, events, and helpers to paginate any list.",
+  "name": "@amatiscorp/pagincord",
+  "version": "2.0.0",
+  "description": "Smart, fully configurable embed pagination for Discord.js v14+. Buttons, select menus, jump modal, EN/ES locales, events, and list helpers.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -35,10 +35,23 @@
     "slash-commands",
     "discord-v14",
     "discord.js",
-    "typescript"
+    "typescript",
+    "i18n",
+    "amatiscorp"
   ],
-  "author": "dymidless@gmail.com",
+  "author": "Amatis Corp <dymidless@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amatiscorp/pagincord.git"
+  },
+  "homepage": "https://github.com/amatiscorp/pagincord#readme",
+  "bugs": {
+    "url": "https://github.com/amatiscorp/pagincord/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "discord.js": "^14.0.0"
   },

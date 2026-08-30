@@ -13,12 +13,22 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
+import type { MessageActionRowComponentBuilder, MessageMentionOptions } from 'discord.js';
+import { configure, getConfig, getLocale, resetConfig, setLocale } from './defaults';
+import { buildEmbedFromData } from './helpers';
+import {
+  interpolate,
+  resolveLocaleStrings,
+  type LocaleCode,
+  type LocaleStrings,
+} from './locales';
 import type {
   AutoFooterOptions,
-  EmbedData,
+  ButtonKey,
   EmbedResolvable,
   EndBehavior,
   EndReason,
+  ExtraRows,
   JumpModalOptions,
   PageContext,
   PaginationButtonEmojis,
@@ -28,8 +38,10 @@ import type {
   PaginationFilter,
   PaginationInteraction,
   PaginationOptions,
+  PaginationPreset,
   PaginationState,
   PaginationTarget,
+  PaginationTexts,
   PaginatorEvents,
   ReplyAs,
 } from './types';
@@ -51,42 +63,69 @@ const DEFAULT_BUTTONS: Required<PaginationButtons> = {
   pageIndicator: false,
 };
 
+const DEFAULT_ORDER: ButtonKey[] = [
+  'first',
+  'previous',
+  'pageIndicator',
+  'next',
+  'last',
+  'stop',
+];
+
 const MAX_SELECT_OPTIONS = 25;
-const CUSTOM_ID_PREFIX = 'pgc';
+const MAX_ROWS = 5;
 
 /**
  * Smart embed paginator for Discord.js v14+.
  *
  * @example
- * const paginator = new Paginator({ embeds, authorId: interaction.user.id });
+ * const paginator = new Paginator({ embeds, authorId: interaction.user.id, locale: 'es' });
  * await paginator.start(interaction);
  */
 export class Paginator extends EventEmitter {
+  static configure = configure;
+  static setLocale = setLocale;
+  static getLocale = getLocale;
+  static getConfig = getConfig;
+  static resetConfig = resetConfig;
+
   private embeds: EmbedBuilder[];
   private currentPage: number;
   private allowedUsers: string[];
   private filterFn?: PaginationFilter;
   private useSelectMenu: boolean;
   private selectPlaceholder?: string | ((page: number, total: number) => string);
+  private selectOptionFn?: PaginationOptions['selectOption'];
   private timeout: number;
+  private maxDuration?: number;
   private buttonEmojis: Required<PaginationButtonEmojis>;
   private buttonLabels: PaginationButtonLabels;
   private buttonStyles: Required<PaginationButtonStyles>;
   private buttons: Required<PaginationButtons>;
+  private buttonOrder: ButtonKey[];
+  private hideEmojis: boolean;
   private jumpModal: false | JumpModalOptions;
   private endBehavior: EndBehavior;
   private loop: boolean;
   private ephemeral: boolean;
   private content?: string | ((ctx: PageContext) => string);
   private autoFooter: false | AutoFooterOptions;
-  private unauthorizedMessage: NonNullable<PaginationOptions['unauthorizedMessage']>;
+  private unauthorizedOverride?: PaginationOptions['unauthorizedMessage'];
   private hideButtonsIfSinglePage: boolean;
   private replyAs?: ReplyAs;
+  private indicatorFormat?: string;
+  private extraRows?: ExtraRows;
+  private allowedMentions?: MessageMentionOptions;
   private onPageChangeCb?: PaginationOptions['onPageChange'];
   private onEndCb?: PaginationOptions['onEnd'];
   private onCollectCb?: PaginationOptions['onCollect'];
+  private onStartCb?: PaginationOptions['onStart'];
+  private onUnauthorizedCb?: PaginationOptions['onUnauthorized'];
 
+  private localeCode: string;
+  private strings: LocaleStrings;
   private readonly instanceId: string;
+  private readonly idPrefix: string;
   private collector?: ReturnType<Message['createMessageComponentCollector']>;
   private message?: Message;
   private ended = false;
@@ -99,6 +138,11 @@ export class Paginator extends EventEmitter {
       throw new Error('At least one embed is required for pagination');
     }
 
+    const cfg = getConfig();
+    const preset = applyPreset(options.preset ?? cfg.preset);
+
+    this.localeCode = options.locale ?? cfg.locale ?? 'en';
+    this.strings = resolveLocaleStrings(this.localeCode, options.texts);
     this.embeds = options.embeds.map((embed) => this.normalizeEmbed(embed));
     this.currentPage = clamp(options.startPage ?? 0, 0, this.embeds.length - 1);
     this.allowedUsers = unique([
@@ -106,37 +150,62 @@ export class Paginator extends EventEmitter {
       ...(options.allowedUsers ?? []),
     ]);
     this.filterFn = options.filter;
-    this.useSelectMenu = options.useSelectMenu ?? false;
+    this.useSelectMenu = options.useSelectMenu ?? preset.useSelectMenu ?? cfg.useSelectMenu ?? false;
     this.selectPlaceholder = options.selectPlaceholder;
-    this.timeout = options.timeout ?? 60_000;
-    this.buttonEmojis = { ...DEFAULT_EMOJIS, ...options.buttonEmojis };
-    this.buttonLabels = options.buttonLabels ?? {};
+    this.selectOptionFn = options.selectOption;
+    this.timeout = options.timeout ?? cfg.timeout ?? 60_000;
+    this.maxDuration = options.maxDuration;
+    this.buttonEmojis = { ...DEFAULT_EMOJIS, ...cfg.buttonEmojis, ...options.buttonEmojis };
+    this.hideEmojis = options.hideEmojis ?? cfg.hideEmojis ?? false;
+
+    const showLabels = options.showButtonLabels ?? cfg.showButtonLabels ?? this.hideEmojis;
+    this.buttonLabels = showLabels
+      ? { ...this.strings.buttons, ...options.buttonLabels }
+      : { ...(options.buttonLabels ?? {}) };
+
     this.buttonStyles = {
       first: options.buttonStyles?.first ?? ButtonStyle.Primary,
       previous: options.buttonStyles?.previous ?? ButtonStyle.Primary,
       next: options.buttonStyles?.next ?? ButtonStyle.Primary,
       last: options.buttonStyles?.last ?? ButtonStyle.Primary,
       stop: options.buttonStyles?.stop ?? ButtonStyle.Danger,
+      pageIndicator: options.buttonStyles?.pageIndicator ?? ButtonStyle.Secondary,
     };
-    this.buttons = { ...DEFAULT_BUTTONS, ...options.buttons };
+    this.buttons = {
+      ...DEFAULT_BUTTONS,
+      ...cfg.buttons,
+      ...preset.buttons,
+      ...options.buttons,
+    };
+    this.buttonOrder = options.buttonOrder ?? preset.buttonOrder ?? DEFAULT_ORDER;
     this.jumpModal = resolveJumpModal(options.jumpModal);
     if (this.jumpModal) this.buttons.pageIndicator = true;
-    this.endBehavior = options.endBehavior ?? (options.deleteOnStop ? 'delete' : 'disable');
-    this.loop = options.loop ?? false;
-    this.ephemeral = options.ephemeral ?? false;
+    this.endBehavior =
+      options.endBehavior ??
+      (options.deleteOnStop ? 'delete' : undefined) ??
+      cfg.endBehavior ??
+      'disable';
+    this.loop = options.loop ?? cfg.loop ?? false;
+    this.ephemeral = options.ephemeral ?? cfg.ephemeral ?? false;
     this.content = options.content;
-    this.autoFooter =
-      options.autoFooter === true
-        ? { format: 'Page {page} of {total}', append: false }
-        : options.autoFooter || false;
-    this.unauthorizedMessage =
-      options.unauthorizedMessage ?? 'You are not allowed to control this pagination.';
-    this.hideButtonsIfSinglePage = options.hideButtonsIfSinglePage ?? false;
+    this.autoFooter = resolveAutoFooter(options.autoFooter ?? cfg.autoFooter, this.strings);
+    this.unauthorizedOverride = options.unauthorizedMessage;
+    this.hideButtonsIfSinglePage =
+      options.hideButtonsIfSinglePage ??
+      preset.hideButtonsIfSinglePage ??
+      cfg.hideButtonsIfSinglePage ??
+      false;
     this.replyAs = options.replyAs;
+    this.indicatorFormat = options.indicatorFormat;
+    this.extraRows = options.extraRows;
+    this.allowedMentions = options.allowedMentions;
     this.onPageChangeCb = options.onPageChange;
     this.onEndCb = options.onEnd;
     this.onCollectCb = options.onCollect;
+    this.onStartCb = options.onStart;
+    this.onUnauthorizedCb = options.onUnauthorized;
     this.instanceId = Math.random().toString(36).slice(2, 10);
+    this.idPrefix = options.customIdPrefix ?? 'pgc';
   }
 
   override emit<K extends keyof PaginatorEvents>(event: K, ...args: PaginatorEvents[K]): boolean {
@@ -164,9 +233,6 @@ export class Paginator extends EventEmitter {
     return super.off(event, listener);
   }
 
-  /**
-   * Start pagination on a message or interaction.
-   */
   async start(target: PaginationTarget): Promise<Message> {
     if (this.started) {
       throw new Error('This paginator has already been started. Create a new instance.');
@@ -189,28 +255,22 @@ export class Paginator extends EventEmitter {
     }
 
     this.attachCollector();
+    this.emit('start', this.message);
+    await this.onStartCb?.(this.message);
     return this.message;
   }
 
-  /**
-   * Stop pagination and apply the configured end behavior.
-   */
   async stop(): Promise<void> {
     await this.endPagination('manual');
   }
 
-  /**
-   * Jump to a specific page (0-based). Clamped to a valid range.
-   */
   async goToPage(page: number, interaction?: PaginationInteraction): Promise<void> {
     if (this.ended) return;
-    const next = clamp(page, 0, this.embeds.length - 1);
-    this.currentPage = next;
+    this.currentPage = clamp(page, 0, this.embeds.length - 1);
     await this.updateMessage();
     await this.emitPageChange(interaction);
   }
 
-  /** Go to the next page (wraps if `loop` is enabled). */
   async next(interaction?: PaginationInteraction): Promise<void> {
     if (this.ended) return;
     if (this.currentPage < this.embeds.length - 1) {
@@ -220,7 +280,6 @@ export class Paginator extends EventEmitter {
     }
   }
 
-  /** Go to the previous page (wraps if `loop` is enabled). */
   async previous(interaction?: PaginationInteraction): Promise<void> {
     if (this.ended) return;
     if (this.currentPage > 0) {
@@ -230,36 +289,83 @@ export class Paginator extends EventEmitter {
     }
   }
 
-  /**
-   * Replace every page. The current index is clamped to the new length.
-   */
+  async first(interaction?: PaginationInteraction): Promise<void> {
+    await this.goToPage(0, interaction);
+  }
+
+  async last(interaction?: PaginationInteraction): Promise<void> {
+    await this.goToPage(this.embeds.length - 1, interaction);
+  }
+
   async setEmbeds(embeds: EmbedResolvable[]): Promise<void> {
     if (!embeds.length) {
       throw new Error('At least one embed is required for pagination');
     }
     this.embeds = embeds.map((embed) => this.normalizeEmbed(embed));
     this.currentPage = clamp(this.currentPage, 0, this.embeds.length - 1);
+    await this.refresh();
+  }
+
+  async addEmbeds(embeds: EmbedResolvable[]): Promise<void> {
+    if (!embeds.length) return;
+    this.embeds.push(...embeds.map((embed) => this.normalizeEmbed(embed)));
+    await this.refresh();
+  }
+
+  async insertEmbeds(index: number, embeds: EmbedResolvable[]): Promise<void> {
+    if (!embeds.length) return;
+    const at = clamp(index, 0, this.embeds.length);
+    this.embeds.splice(at, 0, ...embeds.map((embed) => this.normalizeEmbed(embed)));
+    if (at <= this.currentPage) {
+      this.currentPage += embeds.length;
+    }
+    await this.refresh();
+  }
+
+  async removePage(index: number): Promise<void> {
+    if (this.embeds.length <= 1) {
+      throw new Error('Cannot remove the last page');
+    }
+    const at = clamp(index, 0, this.embeds.length - 1);
+    this.embeds.splice(at, 1);
+    if (this.currentPage >= this.embeds.length) {
+      this.currentPage = this.embeds.length - 1;
+    } else if (this.currentPage > at) {
+      this.currentPage -= 1;
+    }
+    await this.refresh();
+  }
+
+  async refresh(): Promise<void> {
     if (this.message && !this.ended) {
       await this.updateMessage();
     }
   }
 
-  /**
-   * Append pages at the end.
-   */
-  async addEmbeds(embeds: EmbedResolvable[]): Promise<void> {
-    if (!embeds.length) return;
-    this.embeds.push(...embeds.map((embed) => this.normalizeEmbed(embed)));
-    if (this.message && !this.ended) {
-      await this.updateMessage();
+  setAllowedUsers(userIds: string[]): void {
+    this.allowedUsers = unique(userIds);
+  }
+
+  setLocale(locale: LocaleCode, texts?: PaginationTexts): void {
+    this.localeCode = locale;
+    this.strings = resolveLocaleStrings(locale, texts);
+    if (this.autoFooter && !this.autoFooter.format) {
+      this.autoFooter = { ...this.autoFooter, format: this.strings.pageLabel };
     }
+  }
+
+  getLocale(): string {
+    return this.localeCode;
+  }
+
+  getEmbeds(): EmbedBuilder[] {
+    return this.embeds.map((embed) => EmbedBuilder.from(embed.data));
   }
 
   getTotalPages(): number {
     return this.embeds.length;
   }
 
-  /** Current page index (0-based). */
   getCurrentPage(): number {
     return this.currentPage;
   }
@@ -279,15 +385,17 @@ export class Paginator extends EventEmitter {
       authorId: this.allowedUsers[0],
       ended: this.ended,
       loop: this.loop,
+      locale: this.localeCode,
+      active: this.isActive(),
     };
   }
 
   private cid(action: string): string {
-    return `${CUSTOM_ID_PREFIX}:${this.instanceId}:${action}`;
+    return `${this.idPrefix}:${this.instanceId}:${action}`;
   }
 
   private parseAction(customId: string): string | null {
-    const prefix = `${CUSTOM_ID_PREFIX}:${this.instanceId}:`;
+    const prefix = `${this.idPrefix}:${this.instanceId}:`;
     if (!customId.startsWith(prefix)) return null;
     return customId.slice(prefix.length);
   }
@@ -296,43 +404,22 @@ export class Paginator extends EventEmitter {
     if (embed instanceof EmbedBuilder) {
       return EmbedBuilder.from(embed.data);
     }
-    return this.buildEmbed(embed);
-  }
-
-  private buildEmbed(data: EmbedData): EmbedBuilder {
-    const embed = new EmbedBuilder();
-
-    if (data.title) embed.setTitle(data.title);
-    if (data.description) {
-      embed.setDescription(data.description);
-    } else if (!data.fields || data.fields.length === 0) {
-      embed.setDescription('\u200B');
-    }
-    if (data.color !== undefined) embed.setColor(data.color);
-    if (data.fields) embed.addFields(data.fields);
-    if (data.footer) embed.setFooter(data.footer);
-    if (data.thumbnail) embed.setThumbnail(data.thumbnail);
-    if (data.image) embed.setImage(data.image);
-    if (data.author) embed.setAuthor(data.author);
-    if (data.url) embed.setURL(data.url);
-    if (data.timestamp) {
-      embed.setTimestamp(data.timestamp instanceof Date ? data.timestamp : new Date());
-    }
-
-    return embed;
+    return buildEmbedFromData(embed);
   }
 
   private pageContext(): PageContext {
     return { page: this.currentPage, total: this.embeds.length };
   }
 
+  private tokens(): Record<string, string | number> {
+    return { page: this.currentPage + 1, total: this.embeds.length };
+  }
+
   private applyFooter(embed: EmbedBuilder): EmbedBuilder {
     if (!this.autoFooter) return embed;
     const clone = EmbedBuilder.from(embed.data);
-    const format = this.autoFooter.format ?? 'Page {page} of {total}';
-    const pageText = format
-      .replace(/\{page\}/g, String(this.currentPage + 1))
-      .replace(/\{total\}/g, String(this.embeds.length));
+    const format = this.autoFooter.format ?? this.strings.pageLabel;
+    const pageText = interpolate(format, this.tokens());
     const previous = clone.data.footer;
     clone.setFooter({
       text:
@@ -350,101 +437,94 @@ export class Paginator extends EventEmitter {
     return this.content;
   }
 
-  private getPayload(disabled = false): {
-    embeds: EmbedBuilder[];
-    components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[];
-    content?: string;
-  } {
+  private getPayload(disabled = false) {
     const content = this.resolveContent();
     return {
       embeds: [this.applyFooter(this.embeds[this.currentPage])],
       components: disabled ? this.getDisabledComponents() : this.getComponents(),
       ...(content !== undefined ? { content } : {}),
+      ...(this.allowedMentions ? { allowedMentions: this.allowedMentions } : {}),
     };
   }
 
-  private decorateButton(
-    button: ButtonBuilder,
-    kind: keyof PaginationButtonEmojis
-  ): ButtonBuilder {
+  private decorateNavButton(button: ButtonBuilder, kind: keyof PaginationButtonEmojis): ButtonBuilder {
     const emoji = this.buttonEmojis[kind];
     const label = this.buttonLabels[kind];
-    if (emoji) button.setEmoji(emoji);
+    const usedEmoji = !this.hideEmojis && Boolean(emoji);
+    if (usedEmoji) button.setEmoji(emoji!);
     if (label) button.setLabel(label);
+    if (!usedEmoji && !label) {
+      button.setEmoji(DEFAULT_EMOJIS[kind]!);
+    }
     button.setStyle(this.buttonStyles[kind]);
     return button;
   }
 
-  private createButtons(disabled: boolean): ButtonBuilder[] {
+  private buildButton(key: ButtonKey, disabled: boolean): ButtonBuilder | null {
     const single = this.embeds.length === 1;
     const isFirst = this.currentPage === 0;
     const isLast = this.currentPage === this.embeds.length - 1;
     const loop = this.loop && !single;
-    const result: ButtonBuilder[] = [];
 
-    if (this.buttons.first) {
-      result.push(
-        this.decorateButton(
+    if (key !== 'pageIndicator' && !this.buttons[key]) return null;
+
+    switch (key) {
+      case 'first':
+        return this.decorateNavButton(
           new ButtonBuilder()
             .setCustomId(this.cid('first'))
             .setDisabled(disabled || single || (isFirst && !loop)),
           'first'
-        )
-      );
-    }
-
-    if (this.buttons.previous) {
-      result.push(
-        this.decorateButton(
+        );
+      case 'previous':
+        return this.decorateNavButton(
           new ButtonBuilder()
             .setCustomId(this.cid('previous'))
             .setDisabled(disabled || single || (isFirst && !loop)),
           'previous'
-        )
-      );
-    }
-
-    if (this.buttons.pageIndicator) {
-      result.push(
-        new ButtonBuilder()
-          .setCustomId(this.cid('indicator'))
-          .setLabel(`${this.currentPage + 1} / ${this.embeds.length}`)
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(disabled || !this.jumpModal || single)
-      );
-    }
-
-    if (this.buttons.next) {
-      result.push(
-        this.decorateButton(
+        );
+      case 'next':
+        return this.decorateNavButton(
           new ButtonBuilder()
             .setCustomId(this.cid('next'))
             .setDisabled(disabled || single || (isLast && !loop)),
           'next'
-        )
-      );
-    }
-
-    if (this.buttons.last) {
-      result.push(
-        this.decorateButton(
+        );
+      case 'last':
+        return this.decorateNavButton(
           new ButtonBuilder()
             .setCustomId(this.cid('last'))
             .setDisabled(disabled || single || (isLast && !loop)),
           'last'
-        )
-      );
-    }
-
-    if (this.buttons.stop) {
-      result.push(
-        this.decorateButton(
+        );
+      case 'stop':
+        return this.decorateNavButton(
           new ButtonBuilder().setCustomId(this.cid('stop')).setDisabled(disabled),
           'stop'
-        )
-      );
+        );
+      case 'pageIndicator':
+        if (!this.buttons.pageIndicator) return null;
+        return new ButtonBuilder()
+          .setCustomId(this.cid('indicator'))
+          .setLabel(
+            interpolate(this.indicatorFormat ?? this.strings.indicator, this.tokens()).slice(0, 80)
+          )
+          .setStyle(this.buttonStyles.pageIndicator)
+          .setDisabled(disabled || !this.jumpModal || single);
+      default:
+        return null;
     }
+  }
 
+  private createButtons(disabled: boolean): ButtonBuilder[] {
+    const seen = new Set<ButtonKey>();
+    const result: ButtonBuilder[] = [];
+    for (const key of this.buttonOrder) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const button = this.buildButton(key, disabled);
+      if (button) result.push(button);
+    }
     return result;
   }
 
@@ -458,6 +538,7 @@ export class Paginator extends EventEmitter {
 
   private createSelectMenu(disabled: boolean): ActionRowBuilder<StringSelectMenuBuilder> {
     const total = this.embeds.length;
+    const ctx = this.pageContext();
     let start = 0;
     let end = total;
 
@@ -469,19 +550,29 @@ export class Paginator extends EventEmitter {
 
     const options = [];
     for (let i = start; i < end; i++) {
-      const title = this.embeds[i].data.title ?? `Page ${i + 1}`;
-      options.push(
-        new StringSelectMenuOptionBuilder()
-          .setLabel(`${i + 1}. ${title}`.slice(0, 100))
-          .setValue(String(i))
-          .setDefault(i === this.currentPage)
-      );
+      const title = this.embeds[i].data.title ?? interpolate(this.strings.fallbackTitle, { page: i + 1 });
+      const custom = this.selectOptionFn?.(this.embeds[i], i, ctx);
+      const info =
+        typeof custom === 'string'
+          ? { label: custom }
+          : custom ?? {
+              label: interpolate(this.strings.selectOption, { page: i + 1, title }).slice(0, 100),
+            };
+
+      const option = new StringSelectMenuOptionBuilder()
+        .setLabel(info.label.slice(0, 100))
+        .setValue(String(i))
+        .setDefault(i === this.currentPage);
+
+      if (info.description) option.setDescription(info.description.slice(0, 100));
+      if (info.emoji) option.setEmoji(info.emoji);
+      options.push(option);
     }
 
     const placeholderRaw =
       typeof this.selectPlaceholder === 'function'
         ? this.selectPlaceholder(this.currentPage + 1, total)
-        : this.selectPlaceholder ?? `Page ${this.currentPage + 1} of ${total}`;
+        : this.selectPlaceholder ?? interpolate(this.strings.selectPlaceholder, this.tokens());
 
     return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
       new StringSelectMenuBuilder()
@@ -490,40 +581,51 @@ export class Paginator extends EventEmitter {
         .setDisabled(disabled)
         .addOptions(
           disabled
-            ? [new StringSelectMenuOptionBuilder().setLabel('Pagination ended').setValue('ended')]
+            ? [
+                new StringSelectMenuOptionBuilder()
+                  .setLabel(this.strings.selectEnded.slice(0, 100))
+                  .setValue('ended'),
+              ]
             : options
         )
     );
   }
 
-  private getComponents(): ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] {
-    const single = this.embeds.length === 1;
-    const components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
-
-    if (!(this.hideButtonsIfSinglePage && single)) {
-      components.push(...this.rowsFromButtons(this.createButtons(false)));
-    }
-
-    if (this.useSelectMenu && !single) {
-      components.push(this.createSelectMenu(false));
-    }
-
-    return components;
+  private resolveExtraRows(): ActionRowBuilder<MessageActionRowComponentBuilder>[] {
+    if (!this.extraRows) return [];
+    return typeof this.extraRows === 'function' ? this.extraRows(this.pageContext()) : this.extraRows;
   }
 
-  private getDisabledComponents(): ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] {
+  private assembleRows(
+    disabled: boolean
+  ): ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder | MessageActionRowComponentBuilder>[] {
     const single = this.embeds.length === 1;
-    const components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
+    const rows: ActionRowBuilder<
+      ButtonBuilder | StringSelectMenuBuilder | MessageActionRowComponentBuilder
+    >[] = [];
 
     if (!(this.hideButtonsIfSinglePage && single)) {
-      components.push(...this.rowsFromButtons(this.createButtons(true)));
+      rows.push(...this.rowsFromButtons(this.createButtons(disabled)));
     }
 
     if (this.useSelectMenu && !single) {
-      components.push(this.createSelectMenu(true));
+      rows.push(this.createSelectMenu(disabled));
     }
 
-    return components;
+    const remaining = MAX_ROWS - rows.length;
+    if (remaining > 0) {
+      rows.push(...this.resolveExtraRows().slice(0, remaining));
+    }
+
+    return rows;
+  }
+
+  private getComponents() {
+    return this.assembleRows(false);
+  }
+
+  private getDisabledComponents() {
+    return this.assembleRows(true);
   }
 
   private async sendViaInteraction(
@@ -580,13 +682,17 @@ export class Paginator extends EventEmitter {
 
     const options: {
       idle?: number;
+      time?: number;
       filter: (i: MessageComponentInteraction) => boolean;
     } = {
-      filter: (i) => i.customId.startsWith(`${CUSTOM_ID_PREFIX}:${this.instanceId}:`),
+      filter: (i) => i.customId.startsWith(`${this.idPrefix}:${this.instanceId}:`),
     };
 
     if (this.timeout > 0 && Number.isFinite(this.timeout)) {
       options.idle = this.timeout;
+    }
+    if (this.maxDuration && this.maxDuration > 0) {
+      options.time = this.maxDuration;
     }
 
     const collector = this.message.createMessageComponentCollector(options);
@@ -620,10 +726,11 @@ export class Paginator extends EventEmitter {
 
   private async rejectUnauthorized(interaction: PaginationInteraction): Promise<void> {
     this.emit('unauthorized', interaction);
+    await this.onUnauthorizedCb?.(interaction);
     const text =
-      typeof this.unauthorizedMessage === 'function'
-        ? this.unauthorizedMessage(interaction.user)
-        : this.unauthorizedMessage;
+      typeof this.unauthorizedOverride === 'function'
+        ? this.unauthorizedOverride(interaction.user)
+        : this.unauthorizedOverride ?? this.strings.unauthorized;
 
     try {
       if (interaction.deferred || interaction.replied) {
@@ -664,7 +771,7 @@ export class Paginator extends EventEmitter {
     switch (action) {
       case 'first':
         await interaction.deferUpdate();
-        await this.goToPage(0, interaction);
+        await this.first(interaction);
         break;
       case 'previous':
         await interaction.deferUpdate();
@@ -676,7 +783,7 @@ export class Paginator extends EventEmitter {
         break;
       case 'last':
         await interaction.deferUpdate();
-        await this.goToPage(this.embeds.length - 1, interaction);
+        await this.last(interaction);
         break;
       case 'stop':
         await interaction.deferUpdate();
@@ -694,10 +801,11 @@ export class Paginator extends EventEmitter {
     if (!this.jumpModal || !interaction.isButton()) return;
 
     const total = this.embeds.length;
-    const title = (this.jumpModal.title ?? 'Go to page').slice(0, 45);
-    const label = (this.jumpModal.label ?? `Page number (1-${total})`).slice(0, 45);
+    const vars = this.tokens();
+    const title = (this.jumpModal.title ?? this.strings.jumpModalTitle).slice(0, 45);
+    const label = (this.jumpModal.label ?? interpolate(this.strings.jumpModalLabel, vars)).slice(0, 45);
     const placeholder = (
-      this.jumpModal.placeholder ?? `Currently ${this.currentPage + 1} of ${total}`
+      this.jumpModal.placeholder ?? interpolate(this.strings.jumpModalPlaceholder, vars)
     ).slice(0, 100);
 
     const modal = new ModalBuilder()
@@ -729,7 +837,9 @@ export class Paginator extends EventEmitter {
 
       if (Number.isNaN(page) || page < 1 || page > total) {
         await submitted.reply({
-          content: `Please enter a number between 1 and ${total}.`,
+          content: interpolate(this.jumpModal.invalid ?? this.strings.jumpModalInvalid, {
+            total,
+          }),
           ephemeral: true,
         });
         return;
@@ -800,12 +910,6 @@ export class Paginator extends EventEmitter {
   }
 }
 
-/**
- * Create a paginator and start it in one call.
- *
- * @example
- * await paginate(interaction, { embeds, authorId: interaction.user.id });
- */
 export async function paginate(
   target: PaginationTarget,
   options: PaginationOptions
@@ -813,6 +917,57 @@ export async function paginate(
   const paginator = new Paginator(options);
   await paginator.start(target);
   return paginator;
+}
+
+interface PresetResult {
+  buttons?: Partial<PaginationButtons>;
+  useSelectMenu?: boolean;
+  buttonOrder?: ButtonKey[];
+  hideButtonsIfSinglePage?: boolean;
+}
+
+function applyPreset(preset?: PaginationPreset): PresetResult {
+  switch (preset) {
+    case 'compact':
+      return {
+        buttons: {
+          first: false,
+          last: false,
+          previous: true,
+          next: true,
+          stop: true,
+          pageIndicator: true,
+        },
+        buttonOrder: ['previous', 'pageIndicator', 'next', 'stop'],
+      };
+    case 'minimal':
+      return {
+        buttons: {
+          first: false,
+          last: false,
+          stop: false,
+          previous: true,
+          next: true,
+          pageIndicator: false,
+        },
+        buttonOrder: ['previous', 'next'],
+      };
+    case 'select':
+      return {
+        useSelectMenu: true,
+        buttons: {
+          first: false,
+          last: false,
+          previous: false,
+          next: false,
+          stop: true,
+          pageIndicator: false,
+        },
+        hideButtonsIfSinglePage: true,
+      };
+    default:
+      return {};
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -827,4 +982,13 @@ function resolveJumpModal(value: PaginationOptions['jumpModal']): false | JumpMo
   if (!value) return false;
   if (value === true) return {};
   return value;
+}
+
+function resolveAutoFooter(
+  value: PaginationOptions['autoFooter'],
+  strings: LocaleStrings
+): false | AutoFooterOptions {
+  if (!value) return false;
+  if (value === true) return { format: strings.pageLabel, append: false };
+  return { format: value.format ?? strings.pageLabel, append: value.append ?? false };
 }
