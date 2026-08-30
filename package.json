@@ -1,0 +1,50 @@
+{
+  "name": "pagincord",
+  "version": "1.0.0",
+  "description": "The ultimate smart embed pagination library for Discord.js v14+ with buttons, select menus, and TypeScript support.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "discord",
+    "discordjs",
+    "pagination",
+    "paginator",
+    "embeds",
+    "embed",
+    "discord-pagination",
+    "buttons",
+    "components",
+    "discord-v14",
+    "discord.js"
+  ],
+  "author": "dymidless@gmail.com",
+  "license": "MIT",
+  "peerDependencies": {
+    "discord.js": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "discord.js": "^14.14.1",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=16.11.0"
+  }
+}

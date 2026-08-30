@@ -1,0 +1,21 @@
+# Source files
+src/
+tsconfig.json
+tsup.config.ts
+
+# Development files
+.gitignore
+.vscode/
+.idea/
+
+# Documentation (keep README.md)
+*.md
+!README.md
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.log
+.DS_Store
