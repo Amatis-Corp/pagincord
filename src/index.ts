@@ -3,13 +3,17 @@
  * @packageDocumentation
  */
 
-export { Paginator, paginate } from './Paginator';
+export { Paginator, paginate, paginateList } from './Paginator';
 export {
   chunk,
   splitText,
   createPages,
   createTextPages,
   createFieldPages,
+  createTablePages,
+  createImagePages,
+  createCodePages,
+  formatList,
   toEmbedBuilders,
 } from './helpers';
 export type {
@@ -17,6 +21,11 @@ export type {
   CreatePagesContext,
   CreateTextPagesOptions,
   CreateFieldPagesOptions,
+  CreateTablePagesOptions,
+  CreateImagePagesOptions,
+  CreateCodePagesOptions,
+  ImagePageInput,
+  ListStyle,
 } from './helpers';
 export {
   configure,
@@ -30,11 +39,17 @@ export {
   locales,
   en,
   es,
+  pt,
+  fr,
+  de,
   defineLocale,
   interpolate,
   resolveLocaleStrings,
+  listLocales,
 } from './locales';
 export type { LocaleCode, LocaleStrings, LocaleButtonLabels } from './locales';
+export { themes } from './themes';
+export type { PaginationTheme } from './themes';
 export type {
   EmbedData,
   EmbedResolvable,

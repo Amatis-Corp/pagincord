@@ -6,6 +6,7 @@ import { Client, GatewayIntentBits, ChatInputCommandInteraction } from 'discord.
 import {
   Paginator,
   paginate,
+  paginateList,
   createPages,
   configure,
   type PaginationOptions,
@@ -53,20 +54,19 @@ async function sendHelp(interaction: ChatInputCommandInteraction) {
 }
 
 async function sendAyuda(interaction: ChatInputCommandInteraction) {
-  const pages = createPages({
-    items: ['`/ping` — latencia', '`/info` — información', '`/stats` — estadísticas'],
-    itemsPerPage: 2,
-    embed: { title: 'Comandos', color: 0x57f287 },
-    locale: 'es',
-  });
-
-  await paginate(interaction, {
-    embeds: pages,
-    authorId: interaction.user.id,
-    locale: 'es',
-    showButtonLabels: true,
-    preset: 'compact',
-  });
+  await paginateList(
+    interaction,
+    ['`/ping` — latencia', '`/info` — información', '`/stats` — estadísticas'],
+    {
+      itemsPerPage: 2,
+      embed: { title: 'Comandos', color: 0x57f287 },
+      locale: 'es',
+      authorId: interaction.user.id,
+      showButtonLabels: true,
+      preset: 'compact',
+      searchable: true,
+    }
+  );
 }
 
 // client.login('YOUR_BOT_TOKEN');

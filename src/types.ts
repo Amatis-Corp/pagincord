@@ -12,6 +12,7 @@ import type {
   User,
 } from 'discord.js';
 import type { LocaleButtonLabels, LocaleCode, LocaleStrings } from './locales';
+import type { PaginationTheme } from './themes';
 
 /**
  * Plain object used to build an embed without creating an EmbedBuilder yourself.
@@ -33,7 +34,7 @@ export type EmbedResolvable = EmbedBuilder | EmbedData;
 
 export type ButtonEmojiResolvable = string | { id?: string; name?: string; animated?: boolean };
 
-export type ButtonKey = 'first' | 'previous' | 'pageIndicator' | 'next' | 'last' | 'stop';
+export type ButtonKey = 'first' | 'previous' | 'pageIndicator' | 'next' | 'last' | 'stop' | 'search';
 
 /**
  * - `full` — first, previous, stop, next, last
@@ -50,6 +51,7 @@ export interface PaginationButtons {
   last?: boolean;
   stop?: boolean;
   pageIndicator?: boolean;
+  search?: boolean;
 }
 
 export interface PaginationButtonEmojis {
@@ -58,6 +60,7 @@ export interface PaginationButtonEmojis {
   next?: ButtonEmojiResolvable;
   last?: ButtonEmojiResolvable;
   stop?: ButtonEmojiResolvable;
+  search?: ButtonEmojiResolvable;
 }
 
 export interface PaginationButtonLabels {
@@ -66,6 +69,7 @@ export interface PaginationButtonLabels {
   next?: string;
   last?: string;
   stop?: string;
+  search?: string;
 }
 
 export interface PaginationButtonStyles {
@@ -75,6 +79,7 @@ export interface PaginationButtonStyles {
   last?: ButtonStyle;
   stop?: ButtonStyle;
   pageIndicator?: ButtonStyle;
+  search?: ButtonStyle;
 }
 
 export interface AutoFooterOptions {
@@ -191,6 +196,58 @@ export interface PaginationOptions {
 
   allowedMentions?: MessageMentionOptions;
 
+  /**
+   * Emoji pack: `classic` | `arrows` | `round` | `discord`.
+   * Overridden by `buttonEmojis`.
+   */
+  theme?: PaginationTheme;
+
+  /**
+   * Append the page number to the embed title at render time.
+   * `true` uses `{title} ({page}/{total})`.
+   */
+  autoTitle?: boolean | string;
+
+  /**
+   * Mutate (or replace) the embed right before it is sent.
+   */
+  transform?: (
+    embed: EmbedBuilder,
+    ctx: PageContext
+  ) => EmbedBuilder | EmbedData | void | Promise<EmbedBuilder | EmbedData | void>;
+
+  /**
+   * Return `false` to cancel navigation.
+   */
+  beforePageChange?: (
+    from: number,
+    to: number,
+    interaction?: PaginationInteraction
+  ) => boolean | Promise<boolean>;
+
+  /**
+   * Show a row of numbered page buttons (window of up to 5).
+   * Pass a number (1–5) to set the window size.
+   */
+  numberedButtons?: boolean | number;
+
+  /** Search modal: find a page by title or description. Adds a Search button. */
+  searchable?: boolean;
+
+  /** First Close click asks for confirmation; second click (within 10s) ends. */
+  confirmStop?: boolean;
+
+  /** Do not send an ephemeral message when a user is blocked. */
+  silentUnauthorized?: boolean;
+
+  /**
+   * When `start()` receives a `Message`, edit that message instead of sending a new one.
+   */
+  editMessage?: boolean;
+
+  /** `deferReply` automatically if the interaction has not been acknowledged. */
+  autoDefer?: boolean;
+
   onPageChange?: (
     ctx: PageContext & { embed: EmbedBuilder; interaction?: PaginationInteraction }
   ) => void | Promise<void>;
@@ -208,6 +265,7 @@ export interface PaginationState {
   loop: boolean;
   locale: string;
   active: boolean;
+  paused: boolean;
 }
 
 export type PaginationTarget = Message | CommandInteraction | MessageComponentInteraction;
@@ -220,6 +278,8 @@ export interface PaginatorEvents {
   collect: [interaction: PaginationInteraction];
   unauthorized: [interaction: PaginationInteraction];
   start: [message: Message];
+  pause: [];
+  resume: [];
   error: [error: unknown];
 }
 

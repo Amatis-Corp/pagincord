@@ -5,6 +5,7 @@ import type {
   PaginationPreset,
 } from './types';
 import type { LocaleCode } from './locales';
+import type { PaginationTheme } from './themes';
 
 /**
  * Global defaults applied to every new {@link Paginator} unless overridden.
@@ -23,6 +24,13 @@ export interface PagincordDefaults {
   buttonEmojis?: PaginationButtonEmojis;
   buttons?: PaginationButtons;
   ephemeral?: boolean;
+  theme?: PaginationTheme;
+  autoTitle?: boolean | string;
+  numberedButtons?: boolean | number;
+  searchable?: boolean;
+  confirmStop?: boolean;
+  silentUnauthorized?: boolean;
+  autoDefer?: boolean;
 }
 
 const HARDCODED: Required<
@@ -38,6 +46,13 @@ const HARDCODED: Required<
     | 'showButtonLabels'
     | 'hideEmojis'
     | 'ephemeral'
+    | 'theme'
+    | 'autoTitle'
+    | 'numberedButtons'
+    | 'searchable'
+    | 'confirmStop'
+    | 'silentUnauthorized'
+    | 'autoDefer'
   >
 > = {
   locale: 'en',
@@ -50,6 +65,13 @@ const HARDCODED: Required<
   showButtonLabels: false,
   hideEmojis: false,
   ephemeral: false,
+  theme: 'classic',
+  autoTitle: false,
+  numberedButtons: false,
+  searchable: false,
+  confirmStop: false,
+  silentUnauthorized: false,
+  autoDefer: false,
 };
 
 let current: PagincordDefaults = { ...HARDCODED };

@@ -6,7 +6,7 @@
 
 by [Amatis Corp](https://github.com/amatiscorp)
 
-Buttons · Select menus · Jump modal · English / Español · Presets · Events · TypeScript
+Buttons · Select menus · Search · Numbered pages · Themes · EN / ES / PT / FR / DE · TypeScript
 
 [![npm version](https://img.shields.io/npm/v/@amatiscorp/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/@amatiscorp/pagincord)
 [![npm downloads](https://img.shields.io/npm/dm/@amatiscorp/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/@amatiscorp/pagincord)
@@ -114,9 +114,17 @@ client.on('messageCreate', async (message) => {
 
 ---
 
-## Languages (EN / ES)
+## Languages
 
-Every built-in string (unauthorized reply, footer, select placeholder, jump modal, empty list, button labels) ships in **English** and **Spanish**.
+Built-in UI strings (errors, footer, select, jump modal, search, empty list, button labels) ship in:
+
+| Code | Language |
+|------|----------|
+| `en` | English (default) |
+| `es` | Español |
+| `pt` | Português (`pt-BR` also works) |
+| `fr` | Français |
+| `de` | Deutsch |
 
 ```javascript
 // English (default)
@@ -238,9 +246,13 @@ You can still override `buttons`, `buttonOrder`, and `useSelectMenu` after picki
 ## Features
 
 - **EmbedBuilder or plain objects** — mix both; hex colors like `'#5865F2'` are allowed
-- **EN / ES locales** plus `defineLocale()` for any other language
-- **Global `configure()`** so you do not repeat the same options
-- **Presets** — `full`, `compact`, `minimal`, `select`
+- **EN / ES / PT / FR / DE locales** plus `defineLocale()` for any other language
+- **Themes** — `classic`, `arrows`, `round`, `discord`
+- **Search** — find a page by title or description
+- **Numbered buttons** — jump with `1 2 3 4 5`
+- **`paginateList()`** — list → pages → start in one call
+- **Tables, images, code** — `createTablePages`, `createImagePages`, `createCodePages`
+- **Pause / resume**, confirm-close, `autoTitle`, `transform`, `beforePageChange`
 - **User lock** — `authorId`, `allowedUsers`, or a custom `filter`
 - **Smart buttons** — auto-disable at the edges; custom order, labels, styles, emojis
 - **Jump-to-page modal** — click `1 / 5` and type a number
@@ -456,6 +468,87 @@ const pages = createPages({
 await paginate(interaction, { embeds: pages, authorId: interaction.user.id, locale: 'en' });
 ```
 
+### 11. One-shot lists (`paginateList`)
+
+```javascript
+const { paginateList } = require('@amatiscorp/pagincord');
+
+await paginateList(interaction, users, {
+  itemsPerPage: 5,
+  mapItem: (user, i) => `**${i + 1}.** ${user.name} — ${user.score}`,
+  embed: { title: '🏆 Leaderboard', color: 0xffd700 },
+  authorId: interaction.user.id,
+  locale: 'en',
+  searchable: true,
+  numberedButtons: true,
+});
+```
+
+### 12. Themes, search, numbered buttons, auto title
+
+```javascript
+await paginate(interaction, {
+  embeds,
+  authorId: interaction.user.id,
+  theme: 'arrows',          // ⏪ ⬅️ ➡️ ⏩ ❌
+  searchable: true,         // 🔍 opens a search modal
+  numberedButtons: true,    // row of 1–5
+  autoTitle: true,          // "Welcome (1/3)"
+  confirmStop: true,        // Close must be clicked twice
+  autoDefer: true,
+});
+```
+
+Other themes: `classic`, `arrows`, `round`, `discord`. Import `themes` if you want to copy an emoji pack.
+
+### 13. Tables, images, code
+
+```javascript
+const {
+  createTablePages,
+  createImagePages,
+  createCodePages,
+  formatList,
+} = require('@amatiscorp/pagincord');
+
+createTablePages(
+  [
+    ['Alex', 1200],
+    ['Sam', 980],
+  ],
+  { headers: ['Name', 'Score'], rowsPerPage: 10, embed: { title: 'Ranking' } }
+);
+
+createImagePages(['https://example.com/1.png', 'https://example.com/2.png'], {
+  color: 0x5865f2,
+});
+
+createCodePages(source, { language: 'js', title: 'index.js' });
+
+formatList(['alpha', 'beta'], { style: 'bulleted' });
+// • alpha
+// • beta
+```
+
+### 14. Transform, cancel navigation, pause
+
+```javascript
+const paginator = new Paginator({
+  embeds,
+  authorId: interaction.user.id,
+  transform: (embed, { page, total }) =>
+    embed.setFooter({ text: `Custom ${page + 1}/${total}` }),
+  beforePageChange: (from, to) => to !== 2, // skip page 3
+});
+
+await paginator.start(interaction);
+await paginator.pause();
+await paginator.resume();
+
+// Edit an existing bot message instead of sending a new one:
+await paginator.attach(existingMessage);
+```
+
 ---
 
 ## API reference
@@ -464,7 +557,7 @@ await paginate(interaction, { embeds: pages, authorId: interaction.user.id, loca
 
 | Key | Type | Default |
 |-----|------|---------|
-| `locale` | `'en' \| 'es' \| string` | `'en'` |
+| `locale` | `'en' \| 'es' \| 'pt' \| 'fr' \| 'de' \| string` | `'en'` |
 | `timeout` | `number` | `60000` |
 | `loop` | `boolean` | `false` |
 | `useSelectMenu` | `boolean` | `false` |
@@ -473,6 +566,13 @@ await paginate(interaction, { embeds: pages, authorId: interaction.user.id, loca
 | `showButtonLabels` | `boolean` | `false` |
 | `hideEmojis` | `boolean` | `false` |
 | `preset` | `'full' \| 'compact' \| 'minimal' \| 'select'` | — |
+| `theme` | `'classic' \| 'arrows' \| 'round' \| 'discord'` | `'classic'` |
+| `autoTitle` | `boolean \| string` | `false` |
+| `numberedButtons` | `boolean \| number` | `false` |
+| `searchable` | `boolean` | `false` |
+| `confirmStop` | `boolean` | `false` |
+| `silentUnauthorized` | `boolean` | `false` |
+| `autoDefer` | `boolean` | `false` |
 | `ephemeral` | `boolean` | `false` |
 | `buttons` / `buttonEmojis` | objects | built-in |
 
@@ -483,9 +583,19 @@ await paginate(interaction, { embeds: pages, authorId: interaction.user.id, loca
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `embeds` | `(EmbedBuilder \| EmbedData)[]` | **required** | Pages |
-| `locale` | `'en' \| 'es' \| string` | config | UI language |
+| `locale` | `'en' \| 'es' \| 'pt' \| 'fr' \| 'de' \| string` | config | UI language |
 | `texts` | `object` | — | Per-instance string overrides |
 | `preset` | `'full' \| 'compact' \| 'minimal' \| 'select'` | `full` | Button layout shortcut |
+| `theme` | `'classic' \| 'arrows' \| 'round' \| 'discord'` | `classic` | Emoji pack |
+| `autoTitle` | `boolean \| string` | `false` | Append `(1/5)` to the title |
+| `transform` | `(embed, ctx) => …` | — | Mutate embed before send |
+| `beforePageChange` | `(from, to) => boolean` | — | Return `false` to cancel |
+| `numberedButtons` | `boolean \| number` | `false` | Number row (max 5) |
+| `searchable` | `boolean` | `false` | Search modal + button |
+| `confirmStop` | `boolean` | `false` | Double-click Close |
+| `silentUnauthorized` | `boolean` | `false` | Block without a reply |
+| `editMessage` | `boolean` | `false` | Edit the target `Message` |
+| `autoDefer` | `boolean` | `false` | `deferReply` if needed |
 | `authorId` | `string` | — | Only this user can click |
 | `allowedUsers` | `string[]` | `[]` | Extra allowed IDs |
 | `filter` | `(i) => boolean` | — | Return `false` to reject |
@@ -524,7 +634,10 @@ await paginate(interaction, { embeds: pages, authorId: interaction.user.id, loca
 
 ```ts
 await paginator.start(target)
+await paginator.attach(message)    // edit an existing message
 await paginator.stop()
+await paginator.pause()
+await paginator.resume()
 await paginator.goToPage(index)    // 0-based
 await paginator.next()
 await paginator.previous()
@@ -544,7 +657,8 @@ paginator.getTotalPages()
 paginator.getCurrentPage()         // 0-based
 paginator.getMessage()
 paginator.isActive()
-paginator.getState()               // includes locale + active
+paginator.isPaused()
+paginator.getState()               // includes locale, active, paused
 ```
 
 ### Helpers
@@ -552,15 +666,21 @@ paginator.getState()               // includes locale + active
 | Function | Purpose |
 |----------|---------|
 | `paginate(target, options)` | `new Paginator` + `start` |
+| `paginateList(target, items, opts)` | List → embeds → start |
 | `createPages({ items, … })` | Split a list into embeds |
 | `createTextPages(text, opts)` | Split a long string into embeds |
 | `createFieldPages(fields, opts)` | Split embed fields (max 25 / page) |
+| `createTablePages(rows, opts)` | Markdown/code table pages |
+| `createImagePages(urls, opts)` | One image per page |
+| `createCodePages(code, opts)` | Source / logs in code blocks |
+| `formatList(items, opts)` | Numbered / bulleted / dashed |
 | `chunk(array, size)` | Raw `T[][]` |
 | `splitText(text, maxLength)` | Split a string on paragraphs / spaces |
 | `toEmbedBuilders(embeds)` | Normalize mixed pages to `EmbedBuilder[]` |
 | `interpolate(template, vars)` | Replace `{page}` `{total}` `{title}` |
 | `defineLocale(code, strings)` | Register a language |
-| `locales.en` / `locales.es` | Built-in dictionaries |
+| `listLocales()` | Registered locale codes |
+| `locales` / `themes` | Built-in dictionaries and emoji packs |
 
 ### Events
 
@@ -570,6 +690,8 @@ paginator.on('pageChange', ({ page, total, embed, interaction }) => {});
 paginator.on('end', (reason) => {});          // timeout | stop | manual | idle | messageDelete
 paginator.on('collect', (interaction) => {});
 paginator.on('unauthorized', (interaction) => {});
+paginator.on('pause', () => {});
+paginator.on('resume', () => {});
 paginator.on('error', (error) => {});
 ```
 
@@ -643,7 +765,11 @@ const { Paginator, paginate, configure } = require('@amatiscorp/pagincord');
 
 ## Idioma del bot
 
-Todos los textos internos vienen en **inglés** y **español**: error de permisos, footer, placeholder del select, modal “ir a página”, lista vacía y etiquetas de botones.
+Todos los textos internos vienen en **inglés, español, portugués, francés y alemán**: error de permisos, footer, placeholder del select, modal “ir a página”, búsqueda, lista vacía y etiquetas de botones.
+
+```javascript
+configure({ locale: 'es', showButtonLabels: true, theme: 'arrows' });
+```
 
 ```javascript
 // Una vez al arrancar el bot
@@ -736,6 +862,33 @@ await paginate(interaction, {
 });
 ```
 
+Atajo de lista:
+
+```javascript
+const { paginateList } = require('@amatiscorp/pagincord');
+
+await paginateList(interaction, usuarios, {
+  itemsPerPage: 5,
+  mapItem: (u, i) => `**${i + 1}.** ${u.name}`,
+  embed: { title: 'Ranking' },
+  authorId: interaction.user.id,
+  locale: 'es',
+  searchable: true,
+  numberedButtons: true,
+  theme: 'arrows',
+});
+```
+
+Tablas, imágenes y código:
+
+```javascript
+const { createTablePages, createImagePages, createCodePages } = require('@amatiscorp/pagincord');
+
+createTablePages(filas, { headers: ['Nombre', 'Puntos'], embed: { title: 'Ranking' } });
+createImagePages(urls, { color: 0x5865f2 });
+createCodePages(fuente, { language: 'js', title: 'bot.js' });
+```
+
 Texto largo (reglas, changelog):
 
 ```javascript
@@ -794,7 +947,12 @@ const paginator = new Paginator({
   autoFooter: true,          // "Página X de Y"
   endBehavior: 'disable',    // 'disable' | 'delete' | 'clear'
   preset: 'compact',
-  buttonOrder: ['previous', 'pageIndicator', 'next', 'stop'],
+  theme: 'arrows',
+  searchable: true,
+  numberedButtons: true,
+  autoTitle: true,
+  confirmStop: true,
+  buttonOrder: ['previous', 'pageIndicator', 'next', 'stop', 'search'],
 });
 
 await paginator.start(interaction);
@@ -825,15 +983,16 @@ await paginator.stop();
 
 | Método | Qué hace |
 |--------|----------|
-| `start(target)` | Envía la paginación |
+| `start(target)` / `attach(message)` | Envía o edita un mensaje existente |
 | `stop()` | Termina y aplica `endBehavior` |
+| `pause()` / `resume()` | Congela o reactiva los botones |
 | `goToPage(n)` / `first()` / `last()` | Salta de página (desde 0) |
 | `next()` / `previous()` | Avanza o retrocede |
 | `setEmbeds` / `addEmbeds` / `insertEmbeds` / `removePage` | Cambia páginas en caliente |
 | `refresh()` | Vuelve a pintar el mensaje |
 | `setAllowedUsers(ids)` | Cambia quién puede pulsar |
 | `setLocale('es')` | Cambia el idioma sobre la marcha |
-| `getState()` | `{ currentPage, totalPages, locale, active, … }` |
+| `getState()` | `{ currentPage, totalPages, locale, active, paused, … }` |
 
 ## Notas
 

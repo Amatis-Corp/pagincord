@@ -15,7 +15,8 @@ import {
 } from 'discord.js';
 import type { MessageActionRowComponentBuilder, MessageMentionOptions } from 'discord.js';
 import { configure, getConfig, getLocale, resetConfig, setLocale } from './defaults';
-import { buildEmbedFromData } from './helpers';
+import { buildEmbedFromData, createPages, type CreatePagesOptions } from './helpers';
+import { resolveTheme, type PaginationTheme } from './themes';
 import {
   interpolate,
   resolveLocaleStrings,
@@ -52,6 +53,7 @@ const DEFAULT_EMOJIS: Required<PaginationButtonEmojis> = {
   next: '▶️',
   last: '⏭️',
   stop: '🗑️',
+  search: '🔍',
 };
 
 const DEFAULT_BUTTONS: Required<PaginationButtons> = {
@@ -61,6 +63,7 @@ const DEFAULT_BUTTONS: Required<PaginationButtons> = {
   last: true,
   stop: true,
   pageIndicator: false,
+  search: false,
 };
 
 const DEFAULT_ORDER: ButtonKey[] = [
@@ -70,6 +73,7 @@ const DEFAULT_ORDER: ButtonKey[] = [
   'next',
   'last',
   'stop',
+  'search',
 ];
 
 const MAX_SELECT_OPTIONS = 25;
@@ -88,6 +92,7 @@ export class Paginator extends EventEmitter {
   static getLocale = getLocale;
   static getConfig = getConfig;
   static resetConfig = resetConfig;
+  static themes = { classic: 'classic', arrows: 'arrows', round: 'round', discord: 'discord' } as const;
 
   private embeds: EmbedBuilder[];
   private currentPage: number;
@@ -121,6 +126,17 @@ export class Paginator extends EventEmitter {
   private onCollectCb?: PaginationOptions['onCollect'];
   private onStartCb?: PaginationOptions['onStart'];
   private onUnauthorizedCb?: PaginationOptions['onUnauthorized'];
+  private transformFn?: PaginationOptions['transform'];
+  private beforePageChangeCb?: PaginationOptions['beforePageChange'];
+  private autoTitle: false | string;
+  private numberedButtons: number;
+  private searchable: boolean;
+  private confirmStop: boolean;
+  private silentUnauthorized: boolean;
+  private editMessage: boolean;
+  private autoDefer: boolean;
+  private stopArmedUntil = 0;
+  private paused = false;
 
   private localeCode: string;
   private strings: LocaleStrings;
@@ -155,7 +171,8 @@ export class Paginator extends EventEmitter {
     this.selectOptionFn = options.selectOption;
     this.timeout = options.timeout ?? cfg.timeout ?? 60_000;
     this.maxDuration = options.maxDuration;
-    this.buttonEmojis = { ...DEFAULT_EMOJIS, ...cfg.buttonEmojis, ...options.buttonEmojis };
+    const themeEmojis = resolveTheme((options.theme ?? cfg.theme) as PaginationTheme | undefined);
+    this.buttonEmojis = { ...DEFAULT_EMOJIS, ...themeEmojis, ...cfg.buttonEmojis, ...options.buttonEmojis };
     this.hideEmojis = options.hideEmojis ?? cfg.hideEmojis ?? false;
 
     const showLabels = options.showButtonLabels ?? cfg.showButtonLabels ?? this.hideEmojis;
@@ -170,6 +187,7 @@ export class Paginator extends EventEmitter {
       last: options.buttonStyles?.last ?? ButtonStyle.Primary,
       stop: options.buttonStyles?.stop ?? ButtonStyle.Danger,
       pageIndicator: options.buttonStyles?.pageIndicator ?? ButtonStyle.Secondary,
+      search: options.buttonStyles?.search ?? ButtonStyle.Secondary,
     };
     this.buttons = {
       ...DEFAULT_BUTTONS,
@@ -180,6 +198,16 @@ export class Paginator extends EventEmitter {
     this.buttonOrder = options.buttonOrder ?? preset.buttonOrder ?? DEFAULT_ORDER;
     this.jumpModal = resolveJumpModal(options.jumpModal);
     if (this.jumpModal) this.buttons.pageIndicator = true;
+    this.searchable = options.searchable ?? cfg.searchable ?? false;
+    if (this.searchable) this.buttons.search = true;
+    this.numberedButtons = resolveNumbered(options.numberedButtons ?? cfg.numberedButtons);
+    this.confirmStop = options.confirmStop ?? cfg.confirmStop ?? false;
+    this.silentUnauthorized = options.silentUnauthorized ?? cfg.silentUnauthorized ?? false;
+    this.editMessage = options.editMessage ?? false;
+    this.autoDefer = options.autoDefer ?? cfg.autoDefer ?? false;
+    this.autoTitle = resolveAutoTitle(options.autoTitle ?? cfg.autoTitle);
+    this.transformFn = options.transform;
+    this.beforePageChangeCb = options.beforePageChange;
     this.endBehavior =
       options.endBehavior ??
       (options.deleteOnStop ? 'delete' : undefined) ??
@@ -239,14 +267,21 @@ export class Paginator extends EventEmitter {
     }
     this.started = true;
 
-    const payload = this.getPayload();
+    const payload = await this.getPayload();
 
     if (target instanceof Message) {
-      if (!target.channel || !('send' in target.channel)) {
-        throw new Error('Cannot send messages to this channel type');
+      if (this.editMessage) {
+        this.message = await target.edit(payload);
+      } else {
+        if (!target.channel || !('send' in target.channel)) {
+          throw new Error('Cannot send messages to this channel type');
+        }
+        this.message = await target.channel.send(payload);
       }
-      this.message = await target.channel.send(payload);
     } else {
+      if (this.autoDefer && !target.replied && !target.deferred) {
+        await target.deferReply({ ephemeral: this.ephemeral });
+      }
       this.message = await this.sendViaInteraction(target, payload);
     }
 
@@ -264,9 +299,40 @@ export class Paginator extends EventEmitter {
     await this.endPagination('manual');
   }
 
+  /**
+   * Bind pagination to an existing message (edits it).
+   */
+  async attach(message: Message): Promise<Message> {
+    this.editMessage = true;
+    return this.start(message);
+  }
+
+  async pause(): Promise<void> {
+    if (this.ended || this.paused) return;
+    this.paused = true;
+    await this.updateMessage();
+    this.emit('pause');
+  }
+
+  async resume(): Promise<void> {
+    if (this.ended || !this.paused) return;
+    this.paused = false;
+    await this.updateMessage();
+    this.emit('resume');
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
   async goToPage(page: number, interaction?: PaginationInteraction): Promise<void> {
-    if (this.ended) return;
-    this.currentPage = clamp(page, 0, this.embeds.length - 1);
+    if (this.ended || this.paused) return;
+    const next = clamp(page, 0, this.embeds.length - 1);
+    if (this.beforePageChangeCb) {
+      const allowed = await this.beforePageChangeCb(this.currentPage, next, interaction);
+      if (allowed === false) return;
+    }
+    this.currentPage = next;
     await this.updateMessage();
     await this.emitPageChange(interaction);
   }
@@ -387,6 +453,7 @@ export class Paginator extends EventEmitter {
       loop: this.loop,
       locale: this.localeCode,
       active: this.isActive(),
+      paused: this.paused,
     };
   }
 
@@ -431,17 +498,36 @@ export class Paginator extends EventEmitter {
     return clone;
   }
 
+  private applyTitle(embed: EmbedBuilder): EmbedBuilder {
+    if (!this.autoTitle) return embed;
+    const clone = EmbedBuilder.from(embed.data);
+    const title = clone.data.title ?? '';
+    const next = interpolate(this.autoTitle, { ...this.tokens(), title }).slice(0, 256);
+    if (next) clone.setTitle(next);
+    return clone;
+  }
+
+  private async resolveCurrentEmbed(): Promise<EmbedBuilder> {
+    let embed = this.applyTitle(this.applyFooter(this.embeds[this.currentPage]));
+    if (this.transformFn) {
+      const result = await this.transformFn(EmbedBuilder.from(embed.data), this.pageContext());
+      if (result instanceof EmbedBuilder) embed = result;
+      else if (result) embed = buildEmbedFromData(result);
+    }
+    return embed;
+  }
+
   private resolveContent(): string | undefined {
     if (this.content === undefined) return undefined;
     if (typeof this.content === 'function') return this.content(this.pageContext());
     return this.content;
   }
 
-  private getPayload(disabled = false) {
+  private async getPayload(disabled = false) {
     const content = this.resolveContent();
     return {
-      embeds: [this.applyFooter(this.embeds[this.currentPage])],
-      components: disabled ? this.getDisabledComponents() : this.getComponents(),
+      embeds: [await this.resolveCurrentEmbed()],
+      components: disabled || this.paused ? this.getDisabledComponents() : this.getComponents(),
       ...(content !== undefined ? { content } : {}),
       ...(this.allowedMentions ? { allowedMentions: this.allowedMentions } : {}),
     };
@@ -501,6 +587,13 @@ export class Paginator extends EventEmitter {
         return this.decorateNavButton(
           new ButtonBuilder().setCustomId(this.cid('stop')).setDisabled(disabled),
           'stop'
+        );
+      case 'search':
+        return this.decorateNavButton(
+          new ButtonBuilder()
+            .setCustomId(this.cid('search'))
+            .setDisabled(disabled || this.embeds.length <= 1),
+          'search'
         );
       case 'pageIndicator':
         if (!this.buttons.pageIndicator) return null;
@@ -612,12 +705,36 @@ export class Paginator extends EventEmitter {
       rows.push(this.createSelectMenu(disabled));
     }
 
+    if (this.numberedButtons > 0 && !single && rows.length < MAX_ROWS) {
+      rows.push(this.createNumberedRow(disabled));
+    }
+
     const remaining = MAX_ROWS - rows.length;
     if (remaining > 0) {
       rows.push(...this.resolveExtraRows().slice(0, remaining));
     }
 
     return rows;
+  }
+
+  private createNumberedRow(disabled: boolean): ActionRowBuilder<ButtonBuilder> {
+    const total = this.embeds.length;
+    const max = Math.min(5, this.numberedButtons);
+    let start = Math.max(0, this.currentPage - Math.floor(max / 2));
+    let end = Math.min(total, start + max);
+    start = Math.max(0, end - max);
+
+    const buttons = [];
+    for (let i = start; i < end; i++) {
+      buttons.push(
+        new ButtonBuilder()
+          .setCustomId(this.cid(`num:${i}`))
+          .setLabel(String(i + 1))
+          .setStyle(i === this.currentPage ? ButtonStyle.Primary : ButtonStyle.Secondary)
+          .setDisabled(disabled || i === this.currentPage)
+      );
+    }
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
   }
 
   private getComponents() {
@@ -630,7 +747,7 @@ export class Paginator extends EventEmitter {
 
   private async sendViaInteraction(
     interaction: CommandInteraction | MessageComponentInteraction,
-    payload: ReturnType<Paginator['getPayload']>
+    payload: Awaited<ReturnType<Paginator['getPayload']>>
   ): Promise<Message> {
     const mode = this.resolveReplyMode(interaction);
 
@@ -727,6 +844,16 @@ export class Paginator extends EventEmitter {
   private async rejectUnauthorized(interaction: PaginationInteraction): Promise<void> {
     this.emit('unauthorized', interaction);
     await this.onUnauthorizedCb?.(interaction);
+    if (this.silentUnauthorized) {
+      try {
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferUpdate();
+        }
+      } catch (error) {
+        this.reportError(error);
+      }
+      return;
+    }
     const text =
       typeof this.unauthorizedOverride === 'function'
         ? this.unauthorizedOverride(interaction.user)
@@ -751,6 +878,12 @@ export class Paginator extends EventEmitter {
       return;
     }
 
+    if (this.paused) {
+      if (interaction.deferred || interaction.replied) return;
+      await interaction.reply({ content: this.strings.paused, ephemeral: true });
+      return;
+    }
+
     this.emit('collect', interaction);
     await this.onCollectCb?.(interaction);
 
@@ -767,6 +900,12 @@ export class Paginator extends EventEmitter {
 
     const action = this.parseAction(interaction.customId);
     if (!action) return;
+
+    if (action.startsWith('num:')) {
+      await interaction.deferUpdate();
+      await this.goToPage(Number.parseInt(action.slice(4), 10), interaction);
+      return;
+    }
 
     switch (action) {
       case 'first':
@@ -786,11 +925,19 @@ export class Paginator extends EventEmitter {
         await this.last(interaction);
         break;
       case 'stop':
+        if (this.confirmStop && Date.now() > this.stopArmedUntil) {
+          this.stopArmedUntil = Date.now() + 10_000;
+          await interaction.reply({ content: this.strings.confirmStop, ephemeral: true });
+          return;
+        }
         await interaction.deferUpdate();
         await this.endPagination('stop');
         break;
       case 'indicator':
         await this.openJumpModal(interaction);
+        break;
+      case 'search':
+        await this.openSearchModal(interaction);
         break;
       default:
         break;
@@ -852,10 +999,59 @@ export class Paginator extends EventEmitter {
     }
   }
 
+  private async openSearchModal(interaction: PaginationInteraction): Promise<void> {
+    if (!interaction.isButton()) return;
+
+    const modal = new ModalBuilder()
+      .setCustomId(this.cid('search-modal'))
+      .setTitle(this.strings.searchModalTitle.slice(0, 45))
+      .addComponents(
+        new ActionRowBuilder<TextInputBuilder>().addComponents(
+          new TextInputBuilder()
+            .setCustomId('query')
+            .setLabel(this.strings.searchModalLabel.slice(0, 45))
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder(this.strings.searchModalPlaceholder.slice(0, 100))
+            .setRequired(true)
+            .setMaxLength(80)
+        )
+      );
+
+    await interaction.showModal(modal);
+
+    try {
+      const submitted = await interaction.awaitModalSubmit({
+        time: Math.min(this.timeout > 0 ? this.timeout : 30_000, 60_000),
+        filter: (i) =>
+          i.customId === this.cid('search-modal') && i.user.id === interaction.user.id,
+      });
+
+      const query = submitted.fields.getTextInputValue('query').trim().toLowerCase();
+      const index = this.embeds.findIndex((embed) => {
+        const title = embed.data.title?.toLowerCase() ?? '';
+        const description = embed.data.description?.toLowerCase() ?? '';
+        return title.includes(query) || description.includes(query);
+      });
+
+      if (index < 0) {
+        await submitted.reply({
+          content: interpolate(this.strings.searchNoResults, { query }),
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await submitted.deferUpdate();
+      await this.goToPage(index, interaction);
+    } catch {
+      // User closed the modal or it timed out.
+    }
+  }
+
   private async updateMessage(): Promise<void> {
     if (!this.message || this.ended) return;
     try {
-      await this.message.edit(this.getPayload());
+      await this.message.edit(await this.getPayload());
     } catch (error) {
       this.reportError(error);
     }
@@ -892,7 +1088,7 @@ export class Paginator extends EventEmitter {
             content: this.resolveContent() ?? null,
           });
         } else {
-          await this.message.edit(this.getPayload(true));
+          await this.message.edit(await this.getPayload(true));
         }
       } catch (error) {
         this.reportError(error);
@@ -991,4 +1187,59 @@ function resolveAutoFooter(
   if (!value) return false;
   if (value === true) return { format: strings.pageLabel, append: false };
   return { format: value.format ?? strings.pageLabel, append: value.append ?? false };
+}
+
+function resolveNumbered(value: PaginationOptions['numberedButtons']): number {
+  if (value === true) return 5;
+  if (typeof value === 'number' && value > 0) return Math.min(5, Math.floor(value));
+  return 0;
+}
+
+function resolveAutoTitle(value: PaginationOptions['autoTitle']): false | string {
+  if (!value) return false;
+  if (value === true) return '{title} ({page}/{total})';
+  return value;
+}
+
+/**
+ * Build pages from a list and start pagination in one call.
+ *
+ * @example
+ * await paginateList(interaction, users, {
+ *   itemsPerPage: 5,
+ *   mapItem: (u, i) => `**${i + 1}.** ${u.name}`,
+ *   embed: { title: 'Leaderboard' },
+ *   authorId: interaction.user.id,
+ * });
+ */
+export async function paginateList<T>(
+  target: PaginationTarget,
+  items: readonly T[],
+  options: Omit<PaginationOptions, 'embeds'> & Omit<CreatePagesOptions<T>, 'items'> = {}
+): Promise<Paginator> {
+  const {
+    itemsPerPage,
+    mapItem,
+    mapPage,
+    separator,
+    embed,
+    emptyText,
+    pageFooter,
+    locale,
+    ...pagination
+  } = options;
+
+  const pages = createPages({
+    items,
+    itemsPerPage,
+    mapItem,
+    mapPage,
+    separator,
+    embed,
+    emptyText,
+    pageFooter,
+    locale,
+  });
+
+  return paginate(target, { ...pagination, embeds: pages, locale });
 }
