@@ -3,7 +3,7 @@
  * Tokens: `{page}` `{total}` `{title}` `{user}` `{query}`
  */
 
-export type LocaleCode = 'en' | 'es' | 'pt' | 'fr' | 'de' | (string & {});
+export type LocaleCode = 'en' | 'es' | 'pt' | 'fr' | 'de' | 'it' | (string & {});
 
 export interface LocaleButtonLabels {
   first: string;
@@ -12,6 +12,9 @@ export interface LocaleButtonLabels {
   last: string;
   stop: string;
   search: string;
+  home: string;
+  random: string;
+  back: string;
 }
 
 export interface LocaleStrings {
@@ -33,6 +36,7 @@ export interface LocaleStrings {
   searchNoResults: string;
   confirmStop: string;
   paused: string;
+  pageNow: string;
   buttons: LocaleButtonLabels;
 }
 
@@ -55,6 +59,7 @@ export const en: LocaleStrings = {
   searchNoResults: 'No page matched "{query}".',
   confirmStop: 'Click Close again to confirm.',
   paused: 'Pagination is paused.',
+  pageNow: 'Now viewing page {page} of {total}.',
   buttons: {
     first: 'First',
     previous: 'Back',
@@ -62,6 +67,9 @@ export const en: LocaleStrings = {
     last: 'Last',
     stop: 'Close',
     search: 'Search',
+    home: 'Home',
+    random: 'Random',
+    back: 'History',
   },
 };
 
@@ -84,6 +92,7 @@ export const es: LocaleStrings = {
   searchNoResults: 'Ninguna página coincide con "{query}".',
   confirmStop: 'Pulsa Cerrar otra vez para confirmar.',
   paused: 'La paginación está en pausa.',
+  pageNow: 'Estás en la página {page} de {total}.',
   buttons: {
     first: 'Inicio',
     previous: 'Atrás',
@@ -91,6 +100,9 @@ export const es: LocaleStrings = {
     last: 'Final',
     stop: 'Cerrar',
     search: 'Buscar',
+    home: 'Inicio',
+    random: 'Aleatorio',
+    back: 'Historial',
   },
 };
 
@@ -113,6 +125,7 @@ export const pt: LocaleStrings = {
   searchNoResults: 'Nenhuma página corresponde a "{query}".',
   confirmStop: 'Clique em Fechar novamente para confirmar.',
   paused: 'A paginação está pausada.',
+  pageNow: 'Você está na página {page} de {total}.',
   buttons: {
     first: 'Início',
     previous: 'Voltar',
@@ -120,6 +133,9 @@ export const pt: LocaleStrings = {
     last: 'Fim',
     stop: 'Fechar',
     search: 'Buscar',
+    home: 'Início',
+    random: 'Aleatório',
+    back: 'Histórico',
   },
 };
 
@@ -142,6 +158,7 @@ export const fr: LocaleStrings = {
   searchNoResults: 'Aucune page ne correspond à « {query} ».',
   confirmStop: 'Cliquez à nouveau sur Fermer pour confirmer.',
   paused: 'La pagination est en pause.',
+  pageNow: 'Vous êtes à la page {page} sur {total}.',
   buttons: {
     first: 'Début',
     previous: 'Retour',
@@ -149,6 +166,9 @@ export const fr: LocaleStrings = {
     last: 'Fin',
     stop: 'Fermer',
     search: 'Rechercher',
+    home: 'Accueil',
+    random: 'Aléatoire',
+    back: 'Historique',
   },
 };
 
@@ -171,6 +191,7 @@ export const de: LocaleStrings = {
   searchNoResults: 'Keine Seite passt zu „{query}“.',
   confirmStop: 'Zum Bestätigen erneut auf Schließen klicken.',
   paused: 'Die Paginierung ist pausiert.',
+  pageNow: 'Du siehst Seite {page} von {total}.',
   buttons: {
     first: 'Anfang',
     previous: 'Zurück',
@@ -178,6 +199,42 @@ export const de: LocaleStrings = {
     last: 'Ende',
     stop: 'Schließen',
     search: 'Suche',
+    home: 'Start',
+    random: 'Zufall',
+    back: 'Verlauf',
+  },
+};
+
+export const it: LocaleStrings = {
+  unauthorized: 'Non puoi controllare questa paginazione.',
+  pageLabel: 'Pagina {page} di {total}',
+  selectPlaceholder: 'Pagina {page} di {total}',
+  selectEnded: 'Paginazione terminata',
+  selectOption: '{page}. {title}',
+  fallbackTitle: 'Pagina {page}',
+  jumpModalTitle: 'Vai alla pagina',
+  jumpModalLabel: 'Numero di pagina (1-{total})',
+  jumpModalPlaceholder: 'Attuale: {page} di {total}',
+  jumpModalInvalid: 'Inserisci un numero tra 1 e {total}.',
+  emptyList: 'Nessun elemento da mostrare.',
+  indicator: '{page} / {total}',
+  searchModalTitle: 'Cerca pagine',
+  searchModalLabel: 'Ricerca',
+  searchModalPlaceholder: 'Titolo o testo…',
+  searchNoResults: 'Nessuna pagina corrisponde a "{query}".',
+  confirmStop: 'Clicca di nuovo su Chiudi per confermare.',
+  paused: 'La paginazione è in pausa.',
+  pageNow: 'Stai visualizzando la pagina {page} di {total}.',
+  buttons: {
+    first: 'Inizio',
+    previous: 'Indietro',
+    next: 'Avanti',
+    last: 'Fine',
+    stop: 'Chiudi',
+    search: 'Cerca',
+    home: 'Home',
+    random: 'Casuale',
+    back: 'Cronologia',
   },
 };
 
@@ -188,9 +245,10 @@ const registry = new Map<string, LocaleStrings>([
   ['pt-br', pt],
   ['fr', fr],
   ['de', de],
+  ['it', it],
 ]);
 
-export const locales = { en, es, pt, fr, de } as const;
+export const locales = { en, es, pt, fr, de, it } as const;
 
 export function interpolate(
   template: string,

@@ -31,6 +31,8 @@ export interface PagincordDefaults {
   confirmStop?: boolean;
   silentUnauthorized?: boolean;
   autoDefer?: boolean;
+  embedsPerPage?: number;
+  progressBar?: boolean;
 }
 
 const HARDCODED: Required<
@@ -53,6 +55,8 @@ const HARDCODED: Required<
     | 'confirmStop'
     | 'silentUnauthorized'
     | 'autoDefer'
+    | 'embedsPerPage'
+    | 'progressBar'
   >
 > = {
   locale: 'en',
@@ -72,6 +76,8 @@ const HARDCODED: Required<
   confirmStop: false,
   silentUnauthorized: false,
   autoDefer: false,
+  embedsPerPage: 1,
+  progressBar: false,
 };
 
 let current: PagincordDefaults = { ...HARDCODED };

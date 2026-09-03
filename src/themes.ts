@@ -10,6 +10,9 @@ export const themes: Record<PaginationTheme, Required<PaginationButtonEmojis>> =
     last: '⏭️',
     stop: '🗑️',
     search: '🔍',
+    home: '🏠',
+    random: '🎲',
+    back: '↩️',
   },
   arrows: {
     first: '⏪',
@@ -18,6 +21,9 @@ export const themes: Record<PaginationTheme, Required<PaginationButtonEmojis>> =
     last: '⏩',
     stop: '❌',
     search: '🔎',
+    home: '🏠',
+    random: '🎲',
+    back: '↩️',
   },
   round: {
     first: '⏮️',
@@ -26,6 +32,9 @@ export const themes: Record<PaginationTheme, Required<PaginationButtonEmojis>> =
     last: '⏭️',
     stop: '⛔',
     search: '🔍',
+    home: '🏠',
+    random: '🎲',
+    back: '↩️',
   },
   discord: {
     first: '⏮️',
@@ -34,6 +43,9 @@ export const themes: Record<PaginationTheme, Required<PaginationButtonEmojis>> =
     last: '⏭️',
     stop: '🛑',
     search: '🔍',
+    home: '🏠',
+    random: '🎲',
+    back: '↩️',
   },
 };
 

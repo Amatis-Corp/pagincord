@@ -6,7 +6,7 @@
 
 by [Amatis Corp](https://github.com/amatiscorp)
 
-Buttons · Select menus · Search · Numbered pages · Themes · EN / ES / PT / FR / DE · TypeScript
+Buttons · Lazy pages · Progress bar · Search · Themes · EN / ES / PT / FR / DE / IT · TypeScript
 
 [![npm version](https://img.shields.io/npm/v/@amatiscorp/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/@amatiscorp/pagincord)
 [![npm downloads](https://img.shields.io/npm/dm/@amatiscorp/pagincord.svg?style=flat-square)](https://www.npmjs.com/package/@amatiscorp/pagincord)
@@ -125,6 +125,7 @@ Built-in UI strings (errors, footer, select, jump modal, search, empty list, but
 | `pt` | Português (`pt-BR` also works) |
 | `fr` | Français |
 | `de` | Deutsch |
+| `it` | Italiano |
 
 ```javascript
 // English (default)
@@ -246,7 +247,11 @@ You can still override `buttons`, `buttonOrder`, and `useSelectMenu` after picki
 ## Features
 
 - **EmbedBuilder or plain objects** — mix both; hex colors like `'#5865F2'` are allowed
-- **EN / ES / PT / FR / DE locales** plus `defineLocale()` for any other language
+- **Lazy pages** — `fetchPage` + `totalPages` for huge datasets
+- **`embedsPerPage`** — show up to 10 embeds at once
+- **Progress bar**, **link buttons**, **home / random / history**
+- **`allowedRoles`**, **`notifyPageChange`**, **`clone()`**, **`shufflePages()`**
+- **EN / ES / PT / FR / DE / IT locales** plus `defineLocale()` for any other language
 - **Themes** — `classic`, `arrows`, `round`, `discord`
 - **Search** — find a page by title or description
 - **Numbered buttons** — jump with `1 2 3 4 5`
@@ -549,6 +554,38 @@ await paginator.resume();
 await paginator.attach(existingMessage);
 ```
 
+### 15. Lazy pages, progress bar, extra buttons, roles
+
+```javascript
+await paginate(interaction, {
+  fetchPage: async (index) => {
+    const item = await db.getPage(index);
+    return { title: item.name, description: item.body, color: 0x5865f2 };
+  },
+  totalPages: 200,
+  authorId: interaction.user.id,
+  progressBar: true,
+  buttons: { home: true, random: true, back: true },
+  allowedRoles: [modRoleId],
+  notifyPageChange: true,
+  linkButtons: [{ label: 'Docs', url: 'https://github.com/amatiscorp/pagincord' }],
+  embedsPerPage: 1,
+});
+```
+
+```javascript
+const { createLeaderboardPages, createMentionPages, createProgressBar } = require('@amatiscorp/pagincord');
+
+createLeaderboardPages(users, {
+  mapItem: (u) => `${u.name} — ${u.score}`,
+  itemsPerPage: 10,
+});
+
+createMentionPages(userIds, { kind: 'user', itemsPerPage: 15 });
+
+createProgressBar(3, 10); // ██████░░░░
+```
+
 ---
 
 ## API reference
@@ -573,6 +610,8 @@ await paginator.attach(existingMessage);
 | `confirmStop` | `boolean` | `false` |
 | `silentUnauthorized` | `boolean` | `false` |
 | `autoDefer` | `boolean` | `false` |
+| `embedsPerPage` | `number` | `1` |
+| `progressBar` | `boolean` | `false` |
 | `ephemeral` | `boolean` | `false` |
 | `buttons` / `buttonEmojis` | objects | built-in |
 
@@ -596,6 +635,15 @@ await paginator.attach(existingMessage);
 | `silentUnauthorized` | `boolean` | `false` | Block without a reply |
 | `editMessage` | `boolean` | `false` | Edit the target `Message` |
 | `autoDefer` | `boolean` | `false` | `deferReply` if needed |
+| `fetchPage` | `(index, total) => embed(s)` | — | Load pages on demand |
+| `totalPages` | `number` | — | Required with `fetchPage` if no embeds |
+| `embedsPerPage` | `number` | `1` | 1–10 embeds visible at once |
+| `progressBar` | `boolean \| { size, format }` | `false` | Footer bar `{bar}` `{percent}` |
+| `linkButtons` | `{ label, url, emoji? }[]` | — | URL buttons |
+| `allowedRoles` | `string[]` | `[]` | Role IDs that may click |
+| `notifyPageChange` | `boolean \| fn` | `false` | Ephemeral “now on page X” |
+| `homePage` | `number` | `0` | Target of the Home button |
+| `buttons.home` / `.random` / `.back` | `boolean` | `false` | Extra nav buttons |
 | `authorId` | `string` | — | Only this user can click |
 | `allowedUsers` | `string[]` | `[]` | Extra allowed IDs |
 | `filter` | `(i) => boolean` | — | Return `false` to reject |
@@ -643,6 +691,11 @@ await paginator.next()
 await paginator.previous()
 await paginator.first()
 await paginator.last()
+await paginator.home()
+await paginator.random()
+await paginator.back()
+await paginator.shufflePages()
+paginator.clone()
 await paginator.setEmbeds(embeds)
 await paginator.addEmbeds(embeds)
 await paginator.insertEmbeds(index, embeds)
@@ -672,7 +725,11 @@ paginator.getState()               // includes locale, active, paused
 | `createFieldPages(fields, opts)` | Split embed fields (max 25 / page) |
 | `createTablePages(rows, opts)` | Markdown/code table pages |
 | `createImagePages(urls, opts)` | One image per page |
-| `createCodePages(code, opts)` | Source / logs in code blocks |
+| `createLeaderboardPages(items, opts)` | Ranked list with 🥇🥈🥉 |
+| `createMentionPages(ids, opts)` | `<@user>` / `<@&role>` / `<#channel>` |
+| `createProgressBar(value, max, size)` | `██████░░░░` |
+| `isPagincordCustomId(id)` | Detect Pagincord component IDs |
+| `VERSION` | `'2.2.0'` |
 | `formatList(items, opts)` | Numbered / bulleted / dashed |
 | `chunk(array, size)` | Raw `T[][]` |
 | `splitText(text, maxLength)` | Split a string on paragraphs / spaces |
@@ -765,7 +822,7 @@ const { Paginator, paginate, configure } = require('@amatiscorp/pagincord');
 
 ## Idioma del bot
 
-Todos los textos internos vienen en **inglés, español, portugués, francés y alemán**: error de permisos, footer, placeholder del select, modal “ir a página”, búsqueda, lista vacía y etiquetas de botones.
+Todos los textos internos vienen en **inglés, español, portugués, francés, alemán e italiano**: error de permisos, footer, placeholder del select, modal “ir a página”, búsqueda, lista vacía y etiquetas de botones.
 
 ```javascript
 configure({ locale: 'es', showButtonLabels: true, theme: 'arrows' });
@@ -889,6 +946,20 @@ createImagePages(urls, { color: 0x5865f2 });
 createCodePages(fuente, { language: 'js', title: 'bot.js' });
 ```
 
+Páginas bajo demanda, barra de progreso y botones extra:
+
+```javascript
+await paginate(interaction, {
+  fetchPage: async (i) => db.getPage(i),
+  totalPages: 200,
+  locale: 'es',
+  progressBar: true,
+  buttons: { home: true, random: true, back: true },
+  allowedRoles: [idRolMod],
+  linkButtons: [{ label: 'Web', url: 'https://example.com' }],
+});
+```
+
 Texto largo (reglas, changelog):
 
 ```javascript
@@ -986,6 +1057,8 @@ await paginator.stop();
 | `start(target)` / `attach(message)` | Envía o edita un mensaje existente |
 | `stop()` | Termina y aplica `endBehavior` |
 | `pause()` / `resume()` | Congela o reactiva los botones |
+| `home()` / `random()` / `back()` | Inicio, aleatorio, historial |
+| `shufflePages()` / `clone()` | Mezcla páginas o duplica el paginador |
 | `goToPage(n)` / `first()` / `last()` | Salta de página (desde 0) |
 | `next()` / `previous()` | Avanza o retrocede |
 | `setEmbeds` / `addEmbeds` / `insertEmbeds` / `removePage` | Cambia páginas en caliente |

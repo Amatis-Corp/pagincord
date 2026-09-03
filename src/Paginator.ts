@@ -15,7 +15,7 @@ import {
 } from 'discord.js';
 import type { MessageActionRowComponentBuilder, MessageMentionOptions } from 'discord.js';
 import { configure, getConfig, getLocale, resetConfig, setLocale } from './defaults';
-import { buildEmbedFromData, createPages, type CreatePagesOptions } from './helpers';
+import { buildEmbedFromData, createPages, createProgressBar, type CreatePagesOptions } from './helpers';
 import { resolveTheme, type PaginationTheme } from './themes';
 import {
   interpolate,
@@ -30,7 +30,9 @@ import type {
   EndBehavior,
   EndReason,
   ExtraRows,
+  FetchPageFn,
   JumpModalOptions,
+  LinkButton,
   PageContext,
   PaginationButtonEmojis,
   PaginationButtonLabels,
@@ -44,6 +46,7 @@ import type {
   PaginationTarget,
   PaginationTexts,
   PaginatorEvents,
+  ProgressBarOptions,
   ReplyAs,
 } from './types';
 
@@ -54,6 +57,9 @@ const DEFAULT_EMOJIS: Required<PaginationButtonEmojis> = {
   last: '⏭️',
   stop: '🗑️',
   search: '🔍',
+  home: '🏠',
+  random: '🎲',
+  back: '↩️',
 };
 
 const DEFAULT_BUTTONS: Required<PaginationButtons> = {
@@ -64,6 +70,9 @@ const DEFAULT_BUTTONS: Required<PaginationButtons> = {
   stop: true,
   pageIndicator: false,
   search: false,
+  home: false,
+  random: false,
+  back: false,
 };
 
 const DEFAULT_ORDER: ButtonKey[] = [
@@ -74,6 +83,9 @@ const DEFAULT_ORDER: ButtonKey[] = [
   'last',
   'stop',
   'search',
+  'home',
+  'random',
+  'back',
 ];
 
 const MAX_SELECT_OPTIONS = 25;
@@ -135,6 +147,17 @@ export class Paginator extends EventEmitter {
   private silentUnauthorized: boolean;
   private editMessage: boolean;
   private autoDefer: boolean;
+  private fetchPageFn?: FetchPageFn;
+  private declaredTotal?: number;
+  private embedsPerPage: number;
+  private lazyCache = new Map<number, EmbedBuilder[]>();
+  private progressBar: false | ProgressBarOptions;
+  private linkButtons: LinkButton[];
+  private allowedRoles: string[];
+  private notifyPageChange?: boolean | ((ctx: PageContext) => string);
+  private homePage: number;
+  private history: number[] = [];
+  private readonly snapshot: PaginationOptions;
   private stopArmedUntil = 0;
   private paused = false;
 
@@ -150,17 +173,26 @@ export class Paginator extends EventEmitter {
   constructor(options: PaginationOptions) {
     super();
 
-    if (!options.embeds || options.embeds.length === 0) {
-      throw new Error('At least one embed is required for pagination');
+    const hasEmbeds = Boolean(options.embeds?.length);
+    const hasLazy = Boolean(options.fetchPage);
+    if (!hasEmbeds && !hasLazy) {
+      throw new Error('At least one embed is required, or provide fetchPage + totalPages');
+    }
+    if (hasLazy && !hasEmbeds && !(options.totalPages && options.totalPages > 0)) {
+      throw new Error('totalPages is required when using fetchPage without embeds');
     }
 
     const cfg = getConfig();
     const preset = applyPreset(options.preset ?? cfg.preset);
 
+    this.snapshot = options;
     this.localeCode = options.locale ?? cfg.locale ?? 'en';
     this.strings = resolveLocaleStrings(this.localeCode, options.texts);
-    this.embeds = options.embeds.map((embed) => this.normalizeEmbed(embed));
-    this.currentPage = clamp(options.startPage ?? 0, 0, this.embeds.length - 1);
+    this.embeds = (options.embeds ?? []).map((embed) => this.normalizeEmbed(embed));
+    this.fetchPageFn = options.fetchPage;
+    this.declaredTotal = options.totalPages;
+    this.embedsPerPage = clamp(options.embedsPerPage ?? cfg.embedsPerPage ?? 1, 1, 10);
+    this.currentPage = clamp(options.startPage ?? 0, 0, Math.max(0, this.pageCount() - 1));
     this.allowedUsers = unique([
       ...(options.authorId ? [options.authorId] : []),
       ...(options.allowedUsers ?? []),
@@ -188,6 +220,9 @@ export class Paginator extends EventEmitter {
       stop: options.buttonStyles?.stop ?? ButtonStyle.Danger,
       pageIndicator: options.buttonStyles?.pageIndicator ?? ButtonStyle.Secondary,
       search: options.buttonStyles?.search ?? ButtonStyle.Secondary,
+      home: options.buttonStyles?.home ?? ButtonStyle.Secondary,
+      random: options.buttonStyles?.random ?? ButtonStyle.Secondary,
+      back: options.buttonStyles?.back ?? ButtonStyle.Secondary,
     };
     this.buttons = {
       ...DEFAULT_BUTTONS,
@@ -208,6 +243,11 @@ export class Paginator extends EventEmitter {
     this.autoTitle = resolveAutoTitle(options.autoTitle ?? cfg.autoTitle);
     this.transformFn = options.transform;
     this.beforePageChangeCb = options.beforePageChange;
+    this.progressBar = resolveProgressBar(options.progressBar ?? cfg.progressBar);
+    this.linkButtons = options.linkButtons ?? [];
+    this.allowedRoles = options.allowedRoles ?? [];
+    this.notifyPageChange = options.notifyPageChange;
+    this.homePage = options.homePage ?? 0;
     this.endBehavior =
       options.endBehavior ??
       (options.deleteOnStop ? 'delete' : undefined) ??
@@ -266,6 +306,7 @@ export class Paginator extends EventEmitter {
       throw new Error('This paginator has already been started. Create a new instance.');
     }
     this.started = true;
+    await this.ensurePage(this.currentPage);
 
     const payload = await this.getPayload();
 
@@ -327,21 +368,28 @@ export class Paginator extends EventEmitter {
 
   async goToPage(page: number, interaction?: PaginationInteraction): Promise<void> {
     if (this.ended || this.paused) return;
-    const next = clamp(page, 0, this.embeds.length - 1);
+    const next = clamp(page, 0, this.pageCount() - 1);
     if (this.beforePageChangeCb) {
       const allowed = await this.beforePageChangeCb(this.currentPage, next, interaction);
       if (allowed === false) return;
     }
+    if (next !== this.currentPage) {
+      this.history.push(this.currentPage);
+      if (this.history.length > 50) this.history.shift();
+    }
     this.currentPage = next;
+    await this.ensurePage(this.currentPage);
     await this.updateMessage();
     await this.emitPageChange(interaction);
+    await this.notifyIfNeeded(interaction);
   }
 
   async next(interaction?: PaginationInteraction): Promise<void> {
     if (this.ended) return;
-    if (this.currentPage < this.embeds.length - 1) {
+    const last = this.pageCount() - 1;
+    if (this.currentPage < last) {
       await this.goToPage(this.currentPage + 1, interaction);
-    } else if (this.loop && this.embeds.length > 1) {
+    } else if (this.loop && this.pageCount() > 1) {
       await this.goToPage(0, interaction);
     }
   }
@@ -350,8 +398,8 @@ export class Paginator extends EventEmitter {
     if (this.ended) return;
     if (this.currentPage > 0) {
       await this.goToPage(this.currentPage - 1, interaction);
-    } else if (this.loop && this.embeds.length > 1) {
-      await this.goToPage(this.embeds.length - 1, interaction);
+    } else if (this.loop && this.pageCount() > 1) {
+      await this.goToPage(this.pageCount() - 1, interaction);
     }
   }
 
@@ -360,7 +408,58 @@ export class Paginator extends EventEmitter {
   }
 
   async last(interaction?: PaginationInteraction): Promise<void> {
-    await this.goToPage(this.embeds.length - 1, interaction);
+    await this.goToPage(this.pageCount() - 1, interaction);
+  }
+
+  async home(interaction?: PaginationInteraction): Promise<void> {
+    await this.goToPage(this.homePage, interaction);
+  }
+
+  async random(interaction?: PaginationInteraction): Promise<void> {
+    const total = this.pageCount();
+    if (total <= 1) return;
+    let next = this.currentPage;
+    while (next === this.currentPage) {
+      next = Math.floor(Math.random() * total);
+    }
+    await this.goToPage(next, interaction);
+  }
+
+  async back(interaction?: PaginationInteraction): Promise<void> {
+    const prev = this.history.pop();
+    if (prev === undefined) return;
+    const target = prev;
+    if (this.beforePageChangeCb) {
+      const allowed = await this.beforePageChangeCb(this.currentPage, target, interaction);
+      if (allowed === false) {
+        this.history.push(prev);
+        return;
+      }
+    }
+    this.currentPage = clamp(target, 0, this.pageCount() - 1);
+    await this.ensurePage(this.currentPage);
+    await this.updateMessage();
+    await this.emitPageChange(interaction);
+  }
+
+  async shufflePages(): Promise<void> {
+    for (let i = this.embeds.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.embeds[i], this.embeds[j]] = [this.embeds[j], this.embeds[i]];
+    }
+    this.lazyCache.clear();
+    this.history = [];
+    this.currentPage = 0;
+    await this.refresh();
+  }
+
+  clone(): Paginator {
+    return new Paginator({
+      ...this.snapshot,
+      embeds: this.getEmbeds(),
+      startPage: this.currentPage,
+      locale: this.localeCode,
+    });
   }
 
   async setEmbeds(embeds: EmbedResolvable[]): Promise<void> {
@@ -368,7 +467,8 @@ export class Paginator extends EventEmitter {
       throw new Error('At least one embed is required for pagination');
     }
     this.embeds = embeds.map((embed) => this.normalizeEmbed(embed));
-    this.currentPage = clamp(this.currentPage, 0, this.embeds.length - 1);
+    this.lazyCache.clear();
+    this.currentPage = clamp(this.currentPage, 0, this.pageCount() - 1);
     await this.refresh();
   }
 
@@ -429,7 +529,7 @@ export class Paginator extends EventEmitter {
   }
 
   getTotalPages(): number {
-    return this.embeds.length;
+    return this.pageCount();
   }
 
   getCurrentPage(): number {
@@ -447,7 +547,7 @@ export class Paginator extends EventEmitter {
   getState(): PaginationState {
     return {
       currentPage: this.currentPage,
-      totalPages: this.embeds.length,
+      totalPages: this.pageCount(),
       authorId: this.allowedUsers[0],
       ended: this.ended,
       loop: this.loop,
@@ -474,25 +574,52 @@ export class Paginator extends EventEmitter {
     return buildEmbedFromData(embed);
   }
 
+  private pageCount(): number {
+    if (this.fetchPageFn && this.declaredTotal && this.declaredTotal > 0) {
+      return this.declaredTotal;
+    }
+    return Math.max(1, Math.ceil(this.embeds.length / this.embedsPerPage));
+  }
+
+  private async ensurePage(index: number): Promise<void> {
+    if (!this.fetchPageFn || this.lazyCache.has(index)) return;
+    const result = await this.fetchPageFn(index, this.pageCount());
+    const list = Array.isArray(result) ? result : [result];
+    this.lazyCache.set(
+      index,
+      list.map((embed) => this.normalizeEmbed(embed))
+    );
+  }
+
   private pageContext(): PageContext {
-    return { page: this.currentPage, total: this.embeds.length };
+    return { page: this.currentPage, total: this.pageCount() };
   }
 
   private tokens(): Record<string, string | number> {
-    return { page: this.currentPage + 1, total: this.embeds.length };
+    const total = this.pageCount();
+    const percent = total > 0 ? Math.round(((this.currentPage + 1) / total) * 100) : 0;
+    return { page: this.currentPage + 1, total, percent };
   }
 
   private applyFooter(embed: EmbedBuilder): EmbedBuilder {
-    if (!this.autoFooter) return embed;
+    if (!this.autoFooter && !this.progressBar) return embed;
     const clone = EmbedBuilder.from(embed.data);
-    const format = this.autoFooter.format ?? this.strings.pageLabel;
-    const pageText = interpolate(format, this.tokens());
+    const parts: string[] = [];
+    if (this.autoFooter) {
+      const format = this.autoFooter.format ?? this.strings.pageLabel;
+      parts.push(interpolate(format, this.tokens()));
+    }
+    if (this.progressBar) {
+      const size = this.progressBar.size ?? 10;
+      const bar = createProgressBar(this.currentPage + 1, this.pageCount(), size);
+      const format = this.progressBar.format ?? '{bar} {percent}%';
+      parts.push(interpolate(format, { ...this.tokens(), bar }));
+    }
+    const pageText = parts.join(' • ');
     const previous = clone.data.footer;
+    const append = this.autoFooter && this.autoFooter.append;
     clone.setFooter({
-      text:
-        this.autoFooter.append && previous?.text
-          ? `${previous.text} • ${pageText}`
-          : pageText,
+      text: append && previous?.text ? `${previous.text} • ${pageText}` : pageText,
       iconURL: previous?.icon_url,
     });
     return clone;
@@ -507,14 +634,30 @@ export class Paginator extends EventEmitter {
     return clone;
   }
 
-  private async resolveCurrentEmbed(): Promise<EmbedBuilder> {
-    let embed = this.applyTitle(this.applyFooter(this.embeds[this.currentPage]));
-    if (this.transformFn) {
-      const result = await this.transformFn(EmbedBuilder.from(embed.data), this.pageContext());
-      if (result instanceof EmbedBuilder) embed = result;
-      else if (result) embed = buildEmbedFromData(result);
+  private async resolveCurrentEmbeds(): Promise<EmbedBuilder[]> {
+    let raw: EmbedBuilder[];
+    if (this.fetchPageFn) {
+      await this.ensurePage(this.currentPage);
+      raw = this.lazyCache.get(this.currentPage) ?? [];
+    } else {
+      const start = this.currentPage * this.embedsPerPage;
+      raw = this.embeds.slice(start, start + this.embedsPerPage);
     }
-    return embed;
+    if (raw.length === 0 && this.embeds[this.currentPage]) {
+      raw = [this.embeds[this.currentPage]];
+    }
+
+    const result: EmbedBuilder[] = [];
+    for (const item of raw) {
+      let embed = this.applyTitle(this.applyFooter(item));
+      if (this.transformFn) {
+        const transformed = await this.transformFn(EmbedBuilder.from(embed.data), this.pageContext());
+        if (transformed instanceof EmbedBuilder) embed = transformed;
+        else if (transformed) embed = buildEmbedFromData(transformed);
+      }
+      result.push(embed);
+    }
+    return result.length ? result : [new EmbedBuilder().setDescription('\u200B')];
   }
 
   private resolveContent(): string | undefined {
@@ -526,7 +669,7 @@ export class Paginator extends EventEmitter {
   private async getPayload(disabled = false) {
     const content = this.resolveContent();
     return {
-      embeds: [await this.resolveCurrentEmbed()],
+      embeds: await this.resolveCurrentEmbeds(),
       components: disabled || this.paused ? this.getDisabledComponents() : this.getComponents(),
       ...(content !== undefined ? { content } : {}),
       ...(this.allowedMentions ? { allowedMentions: this.allowedMentions } : {}),
@@ -547,9 +690,9 @@ export class Paginator extends EventEmitter {
   }
 
   private buildButton(key: ButtonKey, disabled: boolean): ButtonBuilder | null {
-    const single = this.embeds.length === 1;
+    const single = this.pageCount() === 1;
     const isFirst = this.currentPage === 0;
-    const isLast = this.currentPage === this.embeds.length - 1;
+    const isLast = this.currentPage === this.pageCount() - 1;
     const loop = this.loop && !single;
 
     if (key !== 'pageIndicator' && !this.buttons[key]) return null;
@@ -592,8 +735,27 @@ export class Paginator extends EventEmitter {
         return this.decorateNavButton(
           new ButtonBuilder()
             .setCustomId(this.cid('search'))
-            .setDisabled(disabled || this.embeds.length <= 1),
+            .setDisabled(disabled || single),
           'search'
+        );
+      case 'home':
+        return this.decorateNavButton(
+          new ButtonBuilder()
+            .setCustomId(this.cid('home'))
+            .setDisabled(disabled || this.currentPage === this.homePage),
+          'home'
+        );
+      case 'random':
+        return this.decorateNavButton(
+          new ButtonBuilder().setCustomId(this.cid('random')).setDisabled(disabled || single),
+          'random'
+        );
+      case 'back':
+        return this.decorateNavButton(
+          new ButtonBuilder()
+            .setCustomId(this.cid('back'))
+            .setDisabled(disabled || this.history.length === 0),
+          'back'
         );
       case 'pageIndicator':
         if (!this.buttons.pageIndicator) return null;
@@ -630,7 +792,7 @@ export class Paginator extends EventEmitter {
   }
 
   private createSelectMenu(disabled: boolean): ActionRowBuilder<StringSelectMenuBuilder> {
-    const total = this.embeds.length;
+    const total = this.pageCount();
     const ctx = this.pageContext();
     let start = 0;
     let end = total;
@@ -643,8 +805,10 @@ export class Paginator extends EventEmitter {
 
     const options = [];
     for (let i = start; i < end; i++) {
-      const title = this.embeds[i].data.title ?? interpolate(this.strings.fallbackTitle, { page: i + 1 });
-      const custom = this.selectOptionFn?.(this.embeds[i], i, ctx);
+      const source = this.embedAtPage(i);
+      const title =
+        source?.data.title ?? interpolate(this.strings.fallbackTitle, { page: i + 1 });
+      const custom = source ? this.selectOptionFn?.(source, i, ctx) : undefined;
       const info =
         typeof custom === 'string'
           ? { label: custom }
@@ -684,6 +848,26 @@ export class Paginator extends EventEmitter {
     );
   }
 
+  private embedAtPage(pageIndex: number): EmbedBuilder | undefined {
+    const cached = this.lazyCache.get(pageIndex);
+    if (cached?.[0]) return cached[0];
+    return this.embeds[pageIndex * this.embedsPerPage];
+  }
+
+  private createLinkRow(): ActionRowBuilder<ButtonBuilder> | null {
+    if (!this.linkButtons.length) return null;
+    const row = new ActionRowBuilder<ButtonBuilder>();
+    for (const link of this.linkButtons.slice(0, 5)) {
+      const btn = new ButtonBuilder()
+        .setStyle(ButtonStyle.Link)
+        .setURL(link.url)
+        .setLabel(link.label.slice(0, 80));
+      if (link.emoji) btn.setEmoji(link.emoji);
+      row.addComponents(btn);
+    }
+    return row;
+  }
+
   private resolveExtraRows(): ActionRowBuilder<MessageActionRowComponentBuilder>[] {
     if (!this.extraRows) return [];
     return typeof this.extraRows === 'function' ? this.extraRows(this.pageContext()) : this.extraRows;
@@ -692,7 +876,7 @@ export class Paginator extends EventEmitter {
   private assembleRows(
     disabled: boolean
   ): ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder | MessageActionRowComponentBuilder>[] {
-    const single = this.embeds.length === 1;
+    const single = this.pageCount() === 1;
     const rows: ActionRowBuilder<
       ButtonBuilder | StringSelectMenuBuilder | MessageActionRowComponentBuilder
     >[] = [];
@@ -709,6 +893,11 @@ export class Paginator extends EventEmitter {
       rows.push(this.createNumberedRow(disabled));
     }
 
+    const links = this.createLinkRow();
+    if (links && rows.length < MAX_ROWS) {
+      rows.push(links);
+    }
+
     const remaining = MAX_ROWS - rows.length;
     if (remaining > 0) {
       rows.push(...this.resolveExtraRows().slice(0, remaining));
@@ -718,7 +907,7 @@ export class Paginator extends EventEmitter {
   }
 
   private createNumberedRow(disabled: boolean): ActionRowBuilder<ButtonBuilder> {
-    const total = this.embeds.length;
+    const total = this.pageCount();
     const max = Math.min(5, this.numberedButtons);
     let start = Math.max(0, this.currentPage - Math.floor(max / 2));
     let end = Math.min(total, start + max);
@@ -837,8 +1026,25 @@ export class Paginator extends EventEmitter {
 
   private isAllowed(interaction: PaginationInteraction): boolean {
     if (this.filterFn && !this.filterFn(interaction)) return false;
-    if (this.allowedUsers.length === 0) return true;
-    return this.allowedUsers.includes(interaction.user.id);
+    const userLocked = this.allowedUsers.length > 0;
+    const roleLocked = this.allowedRoles.length > 0;
+    if (!userLocked && !roleLocked) return true;
+    if (userLocked && this.allowedUsers.includes(interaction.user.id)) return true;
+    if (roleLocked && this.memberHasRole(interaction)) return true;
+    return false;
+  }
+
+  private memberHasRole(interaction: PaginationInteraction): boolean {
+    const member = interaction.member;
+    if (!member || !('roles' in member)) return false;
+    const roles = member.roles;
+    if (roles && typeof roles === 'object' && 'cache' in roles) {
+      return this.allowedRoles.some((id) => (roles as { cache: { has: (k: string) => boolean } }).cache.has(id));
+    }
+    if (Array.isArray(roles)) {
+      return this.allowedRoles.some((id) => roles.includes(id));
+    }
+    return false;
   }
 
   private async rejectUnauthorized(interaction: PaginationInteraction): Promise<void> {
@@ -939,6 +1145,18 @@ export class Paginator extends EventEmitter {
       case 'search':
         await this.openSearchModal(interaction);
         break;
+      case 'home':
+        await interaction.deferUpdate();
+        await this.home(interaction);
+        break;
+      case 'random':
+        await interaction.deferUpdate();
+        await this.random(interaction);
+        break;
+      case 'back':
+        await interaction.deferUpdate();
+        await this.back(interaction);
+        break;
       default:
         break;
     }
@@ -947,7 +1165,7 @@ export class Paginator extends EventEmitter {
   private async openJumpModal(interaction: PaginationInteraction): Promise<void> {
     if (!this.jumpModal || !interaction.isButton()) return;
 
-    const total = this.embeds.length;
+    const total = this.pageCount();
     const vars = this.tokens();
     const title = (this.jumpModal.title ?? this.strings.jumpModalTitle).slice(0, 45);
     const label = (this.jumpModal.label ?? interpolate(this.strings.jumpModalLabel, vars)).slice(0, 45);
@@ -1027,22 +1245,40 @@ export class Paginator extends EventEmitter {
       });
 
       const query = submitted.fields.getTextInputValue('query').trim().toLowerCase();
-      const index = this.embeds.findIndex((embed) => {
+      const embedIndex = this.embeds.findIndex((embed) => {
         const title = embed.data.title?.toLowerCase() ?? '';
         const description = embed.data.description?.toLowerCase() ?? '';
         return title.includes(query) || description.includes(query);
       });
 
-      if (index < 0) {
-        await submitted.reply({
-          content: interpolate(this.strings.searchNoResults, { query }),
-          ephemeral: true,
-        });
+      if (embedIndex < 0) {
+        let lazyHit = -1;
+        for (const [page, list] of this.lazyCache) {
+          if (
+            list.some(
+              (embed) =>
+                (embed.data.title?.toLowerCase() ?? '').includes(query) ||
+                (embed.data.description?.toLowerCase() ?? '').includes(query)
+            )
+          ) {
+            lazyHit = page;
+            break;
+          }
+        }
+        if (lazyHit < 0) {
+          await submitted.reply({
+            content: interpolate(this.strings.searchNoResults, { query }),
+            ephemeral: true,
+          });
+          return;
+        }
+        await submitted.deferUpdate();
+        await this.goToPage(lazyHit, interaction);
         return;
       }
 
       await submitted.deferUpdate();
-      await this.goToPage(index, interaction);
+      await this.goToPage(Math.floor(embedIndex / this.embedsPerPage), interaction);
     } catch {
       // User closed the modal or it timed out.
     }
@@ -1058,13 +1294,27 @@ export class Paginator extends EventEmitter {
   }
 
   private async emitPageChange(interaction?: PaginationInteraction): Promise<void> {
+    const visible = this.lazyCache.get(this.currentPage)?.[0] ?? this.embedAtPage(this.currentPage) ?? this.embeds[0];
     const ctx = {
       ...this.pageContext(),
-      embed: this.embeds[this.currentPage],
+      embed: visible ?? new EmbedBuilder().setDescription('\u200B'),
       interaction,
     };
     this.emit('pageChange', ctx);
     await this.onPageChangeCb?.(ctx);
+  }
+
+  private async notifyIfNeeded(interaction?: PaginationInteraction): Promise<void> {
+    if (!this.notifyPageChange || !interaction) return;
+    const text =
+      typeof this.notifyPageChange === 'function'
+        ? this.notifyPageChange(this.pageContext())
+        : interpolate(this.strings.pageNow, this.tokens());
+    try {
+      await interaction.followUp({ content: text, ephemeral: true });
+    } catch (error) {
+      this.reportError(error);
+    }
   }
 
   private async endPagination(reason: EndReason): Promise<void> {
@@ -1082,8 +1332,9 @@ export class Paginator extends EventEmitter {
             await this.message.delete();
           }
         } else if (this.endBehavior === 'clear') {
+          const embeds = await this.resolveCurrentEmbeds();
           await this.message.edit({
-            embeds: [this.applyFooter(this.embeds[this.currentPage])],
+            embeds,
             components: [],
             content: this.resolveContent() ?? null,
           });
@@ -1199,6 +1450,14 @@ function resolveAutoTitle(value: PaginationOptions['autoTitle']): false | string
   if (!value) return false;
   if (value === true) return '{title} ({page}/{total})';
   return value;
+}
+
+function resolveProgressBar(
+  value: PaginationOptions['progressBar']
+): false | ProgressBarOptions {
+  if (!value) return false;
+  if (value === true) return { size: 10, format: '{bar} {percent}%' };
+  return { size: value.size ?? 10, format: value.format ?? '{bar} {percent}%' };
 }
 
 /**

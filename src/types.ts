@@ -34,7 +34,17 @@ export type EmbedResolvable = EmbedBuilder | EmbedData;
 
 export type ButtonEmojiResolvable = string | { id?: string; name?: string; animated?: boolean };
 
-export type ButtonKey = 'first' | 'previous' | 'pageIndicator' | 'next' | 'last' | 'stop' | 'search';
+export type ButtonKey =
+  | 'first'
+  | 'previous'
+  | 'pageIndicator'
+  | 'next'
+  | 'last'
+  | 'stop'
+  | 'search'
+  | 'home'
+  | 'random'
+  | 'back';
 
 /**
  * - `full` — first, previous, stop, next, last
@@ -52,6 +62,9 @@ export interface PaginationButtons {
   stop?: boolean;
   pageIndicator?: boolean;
   search?: boolean;
+  home?: boolean;
+  random?: boolean;
+  back?: boolean;
 }
 
 export interface PaginationButtonEmojis {
@@ -61,6 +74,9 @@ export interface PaginationButtonEmojis {
   last?: ButtonEmojiResolvable;
   stop?: ButtonEmojiResolvable;
   search?: ButtonEmojiResolvable;
+  home?: ButtonEmojiResolvable;
+  random?: ButtonEmojiResolvable;
+  back?: ButtonEmojiResolvable;
 }
 
 export interface PaginationButtonLabels {
@@ -70,6 +86,9 @@ export interface PaginationButtonLabels {
   last?: string;
   stop?: string;
   search?: string;
+  home?: string;
+  random?: string;
+  back?: string;
 }
 
 export interface PaginationButtonStyles {
@@ -80,6 +99,9 @@ export interface PaginationButtonStyles {
   stop?: ButtonStyle;
   pageIndicator?: ButtonStyle;
   search?: ButtonStyle;
+  home?: ButtonStyle;
+  random?: ButtonStyle;
+  back?: ButtonStyle;
 }
 
 export interface AutoFooterOptions {
@@ -117,10 +139,28 @@ export type ExtraRows =
       ctx: PageContext
     ) => ActionRowBuilder<MessageActionRowComponentBuilder>[]);
 
+export interface LinkButton {
+  label: string;
+  url: string;
+  emoji?: ButtonEmojiResolvable;
+}
+
 export interface SelectOptionInfo {
   label: string;
   description?: string;
   emoji?: ButtonEmojiResolvable;
+}
+
+export type FetchPageFn = (
+  index: number,
+  total: number
+) => EmbedResolvable | EmbedResolvable[] | Promise<EmbedResolvable | EmbedResolvable[]>;
+
+export interface ProgressBarOptions {
+  /** Number of blocks. @default 10 */
+  size?: number;
+  /** `{bar}` `{page}` `{total}` `{percent}` */
+  format?: string;
 }
 
 export type PaginationTexts = Partial<Omit<LocaleStrings, 'buttons'>> & {
@@ -132,7 +172,10 @@ export type PaginationTexts = Partial<Omit<LocaleStrings, 'buttons'>> & {
  * Instance options override {@link configure} defaults.
  */
 export interface PaginationOptions {
-  embeds: EmbedResolvable[];
+  /**
+   * Pages to display. Optional when `fetchPage` + `totalPages` are set.
+   */
+  embeds?: EmbedResolvable[];
 
   /** UI language for built-in texts. `'en'` or `'es'`, or a code registered with `defineLocale`. */
   locale?: LocaleCode;
@@ -247,6 +290,38 @@ export interface PaginationOptions {
 
   /** `deferReply` automatically if the interaction has not been acknowledged. */
   autoDefer?: boolean;
+
+  /**
+   * Load pages on demand. Requires `totalPages` if `embeds` is empty.
+   */
+  fetchPage?: FetchPageFn;
+
+  /**
+   * Total pages when using `fetchPage` without preloaded embeds.
+   */
+  totalPages?: number;
+
+  /**
+   * How many embeds to show per page (1–10). @default 1
+   */
+  embedsPerPage?: number;
+
+  /** Unicode progress bar in the footer. */
+  progressBar?: boolean | ProgressBarOptions;
+
+  /** Link buttons (open URLs). Uses a spare action row. */
+  linkButtons?: LinkButton[];
+
+  /** Role IDs allowed to click (in addition to `authorId` / `allowedUsers`). */
+  allowedRoles?: string[];
+
+  /**
+   * After each navigation, send an ephemeral “now on page X”.
+   */
+  notifyPageChange?: boolean | ((ctx: PageContext) => string);
+
+  /** Page index used by the Home button. @default 0 */
+  homePage?: number;
 
   onPageChange?: (
     ctx: PageContext & { embed: EmbedBuilder; interaction?: PaginationInteraction }

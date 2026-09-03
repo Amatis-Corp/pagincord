@@ -13,8 +13,12 @@ export {
   createTablePages,
   createImagePages,
   createCodePages,
+  createLeaderboardPages,
+  createMentionPages,
   formatList,
+  createProgressBar,
   toEmbedBuilders,
+  isPagincordCustomId,
 } from './helpers';
 export type {
   CreatePagesOptions,
@@ -24,6 +28,8 @@ export type {
   CreateTablePagesOptions,
   CreateImagePagesOptions,
   CreateCodePagesOptions,
+  CreateLeaderboardPagesOptions,
+  CreateMentionPagesOptions,
   ImagePageInput,
   ListStyle,
 } from './helpers';
@@ -42,6 +48,7 @@ export {
   pt,
   fr,
   de,
+  it,
   defineLocale,
   interpolate,
   resolveLocaleStrings,
@@ -50,6 +57,7 @@ export {
 export type { LocaleCode, LocaleStrings, LocaleButtonLabels } from './locales';
 export { themes } from './themes';
 export type { PaginationTheme } from './themes';
+export { VERSION } from './version';
 export type {
   EmbedData,
   EmbedResolvable,
@@ -75,4 +83,7 @@ export type {
   ButtonKey,
   ExtraRows,
   SelectOptionInfo,
+  LinkButton,
+  FetchPageFn,
+  ProgressBarOptions,
 } from './types';
